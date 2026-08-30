@@ -314,6 +314,17 @@ class Router:
         """
         return self._profiles.get(provider_name) in EXPLICIT_MODEL_PROFILES
 
+    def _track_override_model(self, task: Task, track: Track) -> str | None:
+        """The model a track override supplies, if this route has one."""
+        if track is not Track.INTIMATE:
+            return None
+        cfg = self.cfg
+        return {
+            Task.REASON: cfg.model_reason_intimate,
+            Task.GENERATE: cfg.model_generate_intimate,
+            Task.HUMANIZE: cfg.model_humanize_intimate,
+        }.get(task)
+
     def _provider_default_model(
         self, task: Task, provider_name: str | None
     ) -> str | None:
@@ -360,6 +371,14 @@ class Router:
         }[task]
 
     def _auto(self, model: str) -> str:
+        """Guess a provider from a model name.
+
+        Only ever a hint: for a route without a track override, `resolve`
+        replaces the model with the chosen provider's own default, so a wrong
+        guess here costs nothing. A track override is the case where the name
+        IS used verbatim, and that one is refused in `resolve` rather than
+        guessed at.
+        """
         preferred = "anthropic" if model.startswith("claude") else "openai"
         if preferred in self._providers:
             return preferred
@@ -413,6 +432,19 @@ class Router:
         model = self.model_for(task, track)
         name = self._configured_provider(task, track)
         if name == "auto":
+            if self._track_override_model(task, track) is not None:
+                # An override names a model this deployment supplies itself --
+                # a self-hosted `hermes-4-70b`, say. It is used verbatim, so a
+                # guessed provider sends that name somewhere that never had it,
+                # and `validate_routes` passes the deployment as fine. Refuse
+                # at startup instead, naming the setting to fix.
+                raise ProviderError(
+                    f"route '{route_key(task.value, track.value)}' sets a model "
+                    f"('{model}') but leaves its provider on 'auto'. A track "
+                    "override is used as given, so the provider has to be "
+                    "named: set the matching SONDER_PROVIDER_*_INTIMATE, or "
+                    "declare the route in SONDER_LLM_ROUTES."
+                )
             name = self._auto(model)
         if name not in self._providers:
             raise ProviderError(f"provider '{name}' is configured but has no key")

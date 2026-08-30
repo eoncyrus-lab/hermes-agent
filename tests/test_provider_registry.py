@@ -565,3 +565,39 @@ def test_a_fully_third_party_deployment_validates_with_the_override():
     assert router.vouched == frozenset({"openrouter"})
     for task in Task:
         assert router.resolve(task).provider_name == "openrouter"
+
+
+def test_a_track_override_without_a_provider_is_refused():
+    """A model this deployment supplies itself cannot be guessed at.
+
+    `_auto` places a provider by model-name prefix. For an ordinary route that
+    is only a hint -- `resolve` swaps in the chosen provider's own default, so
+    a wrong guess costs nothing. A track override is used verbatim, so the
+    guess decides where a self-hosted model name is actually sent.
+    """
+    cfg = _cfg(openai_api_key="test", model_generate_intimate="hermes-4-70b")
+    with pytest.raises(ProviderError, match="leaves its provider on 'auto'"):
+        Router(cfg).resolve(Task.GENERATE, Track.INTIMATE)
+
+
+def test_a_track_override_with_a_provider_resolves():
+    cfg = _cfg(
+        local_base_url="http://localhost:8000/v1",
+        provider_generate_intimate="local",
+        model_generate_intimate="hermes-4-70b",
+    )
+    route = Router(cfg).resolve(Task.GENERATE, Track.INTIMATE)
+    assert (route.provider_name, route.model) == ("local", "hermes-4-70b")
+
+
+@pytest.mark.parametrize(
+    ("slot", "expected_model"),
+    [("anthropic_api_key", "claude-opus-5"), ("openai_api_key", "gpt-5")],
+)
+def test_a_single_first_party_deployment_still_resolves(slot, expected_model):
+    """The lenient guess has to survive: without a track override the model
+    name is replaced by the provider's own default anyway."""
+    cfg = Settings(**{slot: "test"})
+    router = Router(cfg)
+    router.validate_routes()
+    assert router.resolve(Task.REASON).model == expected_model

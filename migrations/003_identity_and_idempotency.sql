@@ -98,7 +98,30 @@ $$;
 GRANT USAGE ON SCHEMA public TO sonder_identity, sonder_erase, sonder_worker,
   sonder_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
-  TO sonder_erase, sonder_worker;
+  TO sonder_erase;
+
+-- The pipeline gets every table EXCEPT the vault, and never `ON ALL TABLES`.
+--
+-- A blanket grant here is replayed every time an operator reruns this file,
+-- which silently undoes a later migration's revoke -- the same trap 002 had
+-- with api_tokens. The pipeline has no business in the vault: it holds what
+-- someone said about their own body, and nothing in ingest or analysis reads
+-- it. Enumerating the tables means a replay in any order lands in the same
+-- place.
+DO $$
+DECLARE t text;
+BEGIN
+  FOR t IN
+    SELECT tablename FROM pg_tables
+     WHERE schemaname = 'public' AND tablename <> 'vault_records'
+  LOOP
+    EXECUTE format(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO sonder_worker', t
+    );
+  END LOOP;
+END
+$$;
+REVOKE ALL ON vault_records FROM sonder_worker;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES
   FROM sonder_app, sonder_erase, sonder_worker, sonder_identity, sonder_bot;

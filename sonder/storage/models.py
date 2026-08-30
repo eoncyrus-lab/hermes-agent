@@ -341,7 +341,9 @@ class PreferenceModelRow(Base):
     computed_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
 
     __table_args__ = (
-        UniqueConstraint("person_id", "version"),
+        # Versioned per relationship, not per person: the same profile can be
+        # the target of two of a user's relationships, and each numbers from 1.
+        UniqueConstraint("relationship_id", "version"),
         UniqueConstraint("relationship_id", "input_fingerprint"),
         UniqueConstraint("id", "relationship_id"),
         UniqueConstraint("id", "person_id"),

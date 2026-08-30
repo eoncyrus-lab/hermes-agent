@@ -525,7 +525,10 @@ async def test_telegram_auth_does_not_depend_on_an_api_token(db):
     if not bot_url:
         pytest.skip("SONDER_BOT_DATABASE_URL not set")
 
-    user_id, telegram_id = uuid4(), 987654321
+    # Not a constant: telegram_user_id is the primary key, so a fixed value
+    # leaves a row behind and the second run against the same database fails
+    # on it. The DB suite has to be re-runnable -- that is how it is used.
+    user_id, telegram_id = uuid4(), uuid4().int % 10**9
     async with maintenance_session() as s:
         await _seed(s, user_id, uuid4(), uuid4(), "Telegram")
         await s.execute(
@@ -679,13 +682,116 @@ async def test_a_conflict_that_is_not_the_fingerprint_is_reported_where_it_happe
 ):
     """An untargeted ON CONFLICT would surface this as a missing row.
 
-    `preference_models` still carries `UNIQUE (person_id, version)` from 001,
-    and one person can be the target of two of the same user's relationships
-    -- each numbering its models from 1. That must raise the integrity error
-    it is, not `NoResultFound` from an unrelated re-select.
+    The insert absorbs a conflict on (relationship_id, input_fingerprint) so a
+    replay converges. Any OTHER unique violation is a real defect and has to
+    arrive as the integrity error it is, not as `NoResultFound` from a
+    re-select that then finds nothing.
     """
     from sqlalchemy.exc import IntegrityError
 
+    from sonder.domain.schemas.preference import PreferenceModel
+    from sonder.storage.db import dyad_session, maintenance_session
+    from sonder.storage.repositories import PreferenceRepo
+    from sonder.storage.scope import Scope
+
+    user_id, person_id, rel_id = uuid4(), uuid4(), uuid4()
+    async with maintenance_session() as s:
+        await _seed(s, user_id, person_id, rel_id, "Versioned")
+        await s.execute(
+            text(
+                "INSERT INTO preference_models (person_id,relationship_id,version,"
+                "scorer_version,input_fingerprint) VALUES (:p,:r,1,'v','fp-a')"
+            ),
+            {"p": person_id, "r": rel_id},
+        )
+    claim = await register(user_id)
+
+    # Same relationship, same version, different inputs: collides on
+    # (relationship_id, version), which is not the fingerprint index.
+    model = PreferenceModel(
+        person_id=person_id,
+        relationship_id=rel_id,
+        version=1,
+        entries={},
+        scorer_version="v",
+    )
+    scope = Scope(user_id, rel_id, claim)
+    with pytest.raises(IntegrityError):
+        async with dyad_session(scope) as s:
+            await PreferenceRepo(s).save_model(scope, model, input_fingerprint="fp-b")
+
+
+# ------------------------------------------------------------------ the vault
+
+
+async def test_the_request_role_cannot_reach_the_vault_at_all(db, register):
+    """The vault is the most sensitive table here, and the answer is blunt.
+
+    It holds what someone actually said about their own body, encrypted, and
+    every row cites a statement rather than an inference. Rather than scoping
+    the request role's view of it, the request role has no privilege on the
+    table -- which is a stronger guarantee than any policy, because it stops
+    being a question about which rows.
+    """
+    from sqlalchemy.exc import ProgrammingError
+
+    from sonder.storage.db import dyad_session, maintenance_session
+    from sonder.storage.scope import Scope
+
+    user_id, person_id, rel_id = uuid4(), uuid4(), uuid4()
+    async with maintenance_session() as s:
+        await _seed(s, user_id, person_id, rel_id, "Vaulted")
+    claim = await register(user_id)
+
+    with pytest.raises(ProgrammingError, match="permission denied"):
+        async with dyad_session(Scope(user_id, rel_id, claim)) as s:
+            await s.execute(text("SELECT count(*) FROM vault_records"))
+
+
+async def test_no_role_holds_a_vault_privilege_without_a_policy(db):
+    """A privilege with no policy is a brace with no belt.
+
+    It reads nothing today, because row security denies by default. It starts
+    reading the moment someone adds a policy for that role, and whoever adds
+    it will reasonably assume the grant was deliberate.
+    """
+    from sonder.storage.db import maintenance_session
+
+    async with maintenance_session() as s:
+        privileged = {
+            row[0]
+            for row in (
+                await s.execute(
+                    text(
+                        "SELECT rolname FROM pg_roles "
+                        " WHERE rolname LIKE 'sonder\\_%' "
+                        "   AND NOT rolbypassrls "
+                        "   AND has_table_privilege("
+                        "         rolname, 'vault_records', 'SELECT')"
+                    )
+                )
+            ).all()
+        }
+        with_policy = {
+            role
+            for row in (
+                await s.execute(
+                    text(
+                        "SELECT unnest(roles)::text FROM pg_policies "
+                        " WHERE tablename = 'vault_records'"
+                    )
+                )
+            ).all()
+            for role in [row[0]]
+        }
+    assert privileged - with_policy == set(), (
+        f"these roles can reach vault_records with no policy: {privileged - with_policy}"
+    )
+
+
+async def test_one_person_can_be_the_target_of_two_relationships(db, register):
+    """`UNIQUE (person_id, version)` made the second one fail on a hidden row."""
+    from sonder.domain.schemas.preference import PreferenceModel
     from sonder.storage.db import dyad_session, maintenance_session
     from sonder.storage.repositories import PreferenceRepo
     from sonder.storage.scope import Scope
@@ -694,7 +800,6 @@ async def test_a_conflict_that_is_not_the_fingerprint_is_reported_where_it_happe
     rel_a, rel_b = uuid4(), uuid4()
     async with maintenance_session() as s:
         await _seed(s, user_id, person_id, rel_a, "Shared")
-        # A second relationship to the same person.
         await s.execute(
             text(
                 "INSERT INTO relationships (id,user_id,target_person_id) "
@@ -702,26 +807,31 @@ async def test_a_conflict_that_is_not_the_fingerprint_is_reported_where_it_happe
             ),
             {"r": rel_b, "u": user_id, "p": person_id},
         )
-        await s.execute(
-            text(
-                "INSERT INTO preference_models (person_id,relationship_id,version,"
-                "scorer_version,input_fingerprint) "
-                "VALUES (:p,:r,1,'v','fp-a')"
-            ),
-            {"p": person_id, "r": rel_a},
-        )
     claim = await register(user_id)
 
-    from sonder.domain.schemas.preference import PreferenceModel
-
-    model = PreferenceModel(
-        person_id=person_id,
-        relationship_id=rel_b,
-        version=1,
-        entries={},
-        scorer_version="v",
-    )
-    scope = Scope(user_id, rel_b, claim)
-    with pytest.raises(IntegrityError):
+    # Both relationships number their first preference model version 1.
+    for rel, fingerprint in ((rel_a, "fp-a"), (rel_b, "fp-b")):
+        model = PreferenceModel(
+            person_id=person_id,
+            relationship_id=rel,
+            version=1,
+            entries={},
+            scorer_version="v",
+        )
+        scope = Scope(user_id, rel, claim)
         async with dyad_session(scope) as s:
-            await PreferenceRepo(s).save_model(scope, model, input_fingerprint="fp-b")
+            await PreferenceRepo(s).save_model(
+                scope, model, input_fingerprint=fingerprint
+            )
+
+    async with maintenance_session() as s:
+        count = (
+            await s.execute(
+                text(
+                    "SELECT count(*) FROM preference_models "
+                    " WHERE relationship_id IN (:a, :b)"
+                ),
+                {"a": rel_a, "b": rel_b},
+            )
+        ).scalar()
+    assert count == 2, "the second relationship could not version from 1"

@@ -20,9 +20,10 @@ services:
       - ./migrations/002_security_boundaries.sql:/docker-entrypoint-initdb.d/02-security.sql:ro
       - ./migrations/003_identity_and_idempotency.sql:/docker-entrypoint-initdb.d/03-identity.sql:ro
       - ./migrations/004_integrity_and_idempotency.sql:/docker-entrypoint-initdb.d/04-integrity.sql:ro
+      - ./migrations/005_vault_scope_and_version_keys.sql:/docker-entrypoint-initdb.d/05-vault.sql:ro
       # Last: the migrations create the service roles without a password, so
       # the suite has to give them one before it can connect as them.
-      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/05-roles.sql:ro
+      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/06-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sonder -d sonder_test"]
       interval: 2s
