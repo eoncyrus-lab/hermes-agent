@@ -1,0 +1,111 @@
+# Six database identities, and the split is the whole point. No literal
+# credential appears in this file: every password comes from the environment
+# and `?err` makes an unset one a startup failure rather than a default.
+#
+# Neither Postgres nor Redis publishes a host port. They are reachable on the
+# compose network and nowhere else -- a published 5432 on a laptop is a
+# published 5432 on whatever network that laptop joins next.
+
+x-db-env: &db-env
+  SONDER_DATABASE_URL: postgresql+asyncpg://sonder_app:${SONDER_APP_DB_PASSWORD:?set SONDER_APP_DB_PASSWORD}@db:5432/sonder
+  SONDER_IDENTITY_DATABASE_URL: postgresql+asyncpg://sonder_identity:${SONDER_IDENTITY_DB_PASSWORD:?set SONDER_IDENTITY_DB_PASSWORD}@db:5432/sonder
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sonder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: sonder
+    # Deliberately not published. Use `docker compose exec db psql` for a shell.
+    expose: ["5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonder"]
+      interval: 5s
+      retries: 10
+
+  # The migrations create every service role without a password, so they
+  # cannot authenticate until this sets one from the environment. Runs on
+  # every `up`, which is also how a password is rotated.
+  db-roles:
+    image: pgvector/pgvector:pg16
+    entrypoint: ["/bin/bash", "/opt/db-roles.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: sonder
+      PGDATABASE: sonder
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      SONDER_APP_DB_PASSWORD: ${SONDER_APP_DB_PASSWORD:?set SONDER_APP_DB_PASSWORD}
+      SONDER_IDENTITY_DB_PASSWORD: ${SONDER_IDENTITY_DB_PASSWORD:?set SONDER_IDENTITY_DB_PASSWORD}
+      SONDER_ERASURE_DB_PASSWORD: ${SONDER_ERASURE_DB_PASSWORD:?set SONDER_ERASURE_DB_PASSWORD}
+      SONDER_WORKER_DB_PASSWORD: ${SONDER_WORKER_DB_PASSWORD:?set SONDER_WORKER_DB_PASSWORD}
+      SONDER_MAINT_DB_PASSWORD: ${SONDER_MAINT_DB_PASSWORD:?set SONDER_MAINT_DB_PASSWORD}
+      SONDER_BOT_DB_PASSWORD: ${SONDER_BOT_DB_PASSWORD:?set SONDER_BOT_DB_PASSWORD}
+    volumes:
+      - ./scripts/db-roles.sh:/opt/db-roles.sh:ro
+    depends_on:
+      db: {condition: service_healthy}
+
+  redis:
+    image: redis:7-alpine
+    expose: ["6379"]
+
+  api:
+    build: .
+    command: uvicorn sonder.api.main:app --host 0.0.0.0 --port 8000
+    ports: ["127.0.0.1:8000:8000"]
+    env_file: .env
+    environment:
+      <<: *db-env
+      # Erasure and inspection span one user's relationships. `sonder_erase`
+      # is NOT BYPASSRLS -- it reaches no further than the account being
+      # erased -- which is why the API can hold it and could not hold
+      # `sonder_maint`.
+      SONDER_ERASURE_DATABASE_URL: postgresql+asyncpg://sonder_erase:${SONDER_ERASURE_DB_PASSWORD:?set SONDER_ERASURE_DB_PASSWORD}@db:5432/sonder
+    depends_on:
+      db: {condition: service_healthy}
+      db-roles: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+
+  worker:
+    build: .
+    # Separate service on purpose: the ingest and analysis pipeline is slow,
+    # expensive and low-concurrency, so it scales on a different curve to the
+    # API and should not compete with it for capacity.
+    command: arq sonder.worker.tasks.WorkerSettings
+    env_file: .env
+    environment:
+      SONDER_DATABASE_URL: postgresql+asyncpg://sonder_worker:${SONDER_WORKER_DB_PASSWORD:?set SONDER_WORKER_DB_PASSWORD}@db:5432/sonder
+      SONDER_WORKER_DATABASE_URL: postgresql+asyncpg://sonder_worker:${SONDER_WORKER_DB_PASSWORD:?set SONDER_WORKER_DB_PASSWORD}@db:5432/sonder
+      # The ONLY service that holds the BYPASSRLS role, for the two scheduled
+      # jobs that legitimately span users: outcome scoring and artifact
+      # purging. Neither is reachable from a request.
+      SONDER_MAINTENANCE_DATABASE_URL: postgresql+asyncpg://sonder_maint:${SONDER_MAINT_DB_PASSWORD:?set SONDER_MAINT_DB_PASSWORD}@db:5432/sonder
+    depends_on:
+      db: {condition: service_healthy}
+      db-roles: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+
+  bot:
+    build: .
+    command: python -m sonder.bot.telegram
+    env_file: .env
+    environment:
+      SONDER_DATABASE_URL: postgresql+asyncpg://sonder_app:${SONDER_APP_DB_PASSWORD:?set SONDER_APP_DB_PASSWORD}@db:5432/sonder
+      # `sonder_bot`, not `sonder_identity`. It is the only role that may call
+      # auth_telegram, which takes a guessable ten-digit Telegram id rather
+      # than a 256-bit digest -- so anything holding it can walk the id space
+      # and trade a hit for a working claim. The API must never get this DSN.
+      # No erasure credential either: the bot has no erasure surface.
+      SONDER_IDENTITY_DATABASE_URL: postgresql+asyncpg://sonder_bot:${SONDER_BOT_DB_PASSWORD:?set SONDER_BOT_DB_PASSWORD}@db:5432/sonder
+    depends_on:
+      db: {condition: service_healthy}
+      db-roles: {condition: service_completed_successfully}
+      api: {condition: service_started}
+    profiles: ["bot"]
+
+volumes:
+  pgdata:

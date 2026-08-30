@@ -1,0 +1,4 @@
+{"id":"leak-001","kind":"cross_dyad","text":"还在想咖啡店那只猫","other_phrases":["咖啡店那只猫"],"expect":{"leak":true}}
+{"id":"leak-002","kind":"cross_dyad","text":"that penguin thing at the aquarium still kills me","other_phrases":["the penguin thing at the aquarium"],"expect":{"leak":true}}
+{"id":"leak-003","kind":"cross_dyad","text":"明天有空吗","other_phrases":["咖啡店那只猫","the penguin thing"],"expect":{"leak":false}}
+{"id":"leak-004","kind":"cross_dyad","text":"你上次说的那家店我去了","other_phrases":["咖啡店那只猫"],"expect":{"leak":false}}

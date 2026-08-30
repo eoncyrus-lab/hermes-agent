@@ -1,0 +1,6 @@
+{"id":"hum-001","kind":"ai_pattern","text":"看来你今天很累，那我是不是应该少打扰你一点。","expect":{"flagged":true}}
+{"id":"hum-002","kind":"ai_pattern","text":"突然不太想学这么快了。","expect":{"flagged":false}}
+{"id":"hum-003","kind":"ai_pattern","text":"原来你也喜欢这个，没想到我们还挺像的。","expect":{"flagged":true}}
+{"id":"hum-004","kind":"ai_pattern","text":"明天有空吗，一起去看看那个展","expect":{"flagged":false}}
+{"id":"hum-005","kind":"ai_pattern","text":"It seems like you had a long day. That said, I hope you get some rest!","expect":{"flagged":true}}
+{"id":"hum-006","kind":"ai_pattern","text":"那个展还开着，周六去?","expect":{"flagged":false}}
