@@ -6,5 +6,9 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .DS_Store
-storage/
+# Anchored with a leading slash: the local Postgres data directory only.
+# Unanchored, this pattern matches every directory named `storage` at any
+# depth -- which silently excluded sonder/storage/ and shipped a package that
+# could not be imported.
+/storage/
 backups/
