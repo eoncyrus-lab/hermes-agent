@@ -41,6 +41,15 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # and these enums are serialised in several places. No benefit worth that risk.
 ignore = ["UP042"]
 
+[tool.ruff.lint.isort]
+# Declared explicitly rather than left to detection. Ruff infers first-party
+# packages from the working tree, and that inference differed between a
+# developer checkout and CI -- the same code was clean locally and 18 import
+# blocks out of order in CI, because CI sorted `sonder` as a third-party
+# package. A linter that disagrees with itself across environments is worse
+# than no linter.
+known-first-party = ["sonder"]
+
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = ["F401"]          # re-export modules
 "sonder/api/*.py" = ["B008"]         # FastAPI Depends() is a call in a default
