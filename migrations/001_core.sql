@@ -73,7 +73,8 @@ CREATE TABLE voice_profiles (
   avoided_constructions text[] NOT NULL DEFAULT '{}',
   exemplar_message_ids  uuid[] NOT NULL DEFAULT '{}',
   created_at            timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (person_id, version)
+  UNIQUE (person_id, version),
+  CONSTRAINT voice_profiles_id_person_unique UNIQUE (id, person_id)
 );
 
 CREATE TABLE relationships (
@@ -127,6 +128,7 @@ CREATE TABLE messages (
   sensitivity       sensitivity NOT NULL DEFAULT 'standard',
   redacted          boolean NOT NULL DEFAULT false,
   UNIQUE (interaction_id, seq),
+  CONSTRAINT messages_id_interaction_unique UNIQUE (id, interaction_id),
   CONSTRAINT vault_text_not_inline
     CHECK (sensitivity <> 'vault' OR body IS NULL)
 );
@@ -147,7 +149,8 @@ CREATE TABLE signals (
   created_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT signals_interaction_same_relationship
     FOREIGN KEY (interaction_id, relationship_id)
-    REFERENCES interactions(id, relationship_id) ON DELETE CASCADE
+    REFERENCES interactions(id, relationship_id) ON DELETE CASCADE,
+  CONSTRAINT signals_id_relationship_unique UNIQUE (id, relationship_id)
 );
 CREATE INDEX ON signals (relationship_id, occurred_at DESC);
 
@@ -170,10 +173,17 @@ CREATE TABLE relationship_states (
   stage            text NOT NULL,
   computed_from    uuid[] NOT NULL DEFAULT '{}',
   model_version    text NOT NULL,
+  input_fingerprint varchar(64) NOT NULL,
   computed_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (relationship_id, version),
   CONSTRAINT relationship_states_id_relationship_unique
     UNIQUE (id, relationship_id),
+  CONSTRAINT relationship_states_relationship_fingerprint_unique
+    UNIQUE (relationship_id, input_fingerprint),
+  CONSTRAINT relationship_states_supersedes_same_relationship
+    FOREIGN KEY (supersedes, relationship_id)
+    REFERENCES relationship_states(id, relationship_id)
+    DEFERRABLE INITIALLY DEFERRED,
   CONSTRAINT versions_chain CHECK (version = 1 OR supersedes IS NOT NULL)
 );
 CREATE INDEX ON relationship_states (relationship_id, as_of DESC);
@@ -223,8 +233,13 @@ CREATE TABLE preference_models (
   version          integer NOT NULL CHECK (version >= 1),
   entries          jsonb NOT NULL DEFAULT '{}'::jsonb,
   scorer_version   text NOT NULL,
+  input_fingerprint varchar(64) NOT NULL,
   computed_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (person_id, version),
+  CONSTRAINT preference_models_relationship_fingerprint_unique
+    UNIQUE (relationship_id, input_fingerprint),
+  CONSTRAINT preference_models_id_relationship_unique UNIQUE (id, relationship_id),
+  CONSTRAINT preference_models_id_person_unique UNIQUE (id, person_id),
   CONSTRAINT preference_models_person_same_relationship
     FOREIGN KEY (relationship_id, person_id)
     REFERENCES relationships(id, target_person_id) ON DELETE CASCADE
@@ -261,7 +276,10 @@ CREATE TABLE strategy_records (
     REFERENCES relationships(id, user_id) ON DELETE CASCADE,
   CONSTRAINT strategy_records_state_same_relationship
     FOREIGN KEY (relationship_state_id, relationship_id)
-    REFERENCES relationship_states(id, relationship_id)
+    REFERENCES relationship_states(id, relationship_id),
+  CONSTRAINT strategy_records_preference_same_relationship
+    FOREIGN KEY (preference_model_id, relationship_id)
+    REFERENCES preference_models(id, relationship_id)
 );
 CREATE INDEX ON strategy_records (relationship_id, shown_at DESC);
 
@@ -288,7 +306,8 @@ CREATE TABLE strategy_outcomes (
   ),
   CONSTRAINT strategy_outcomes_strategy_same_relationship
     FOREIGN KEY (strategy_id, relationship_id)
-    REFERENCES strategy_records(id, relationship_id)
+    REFERENCES strategy_records(id, relationship_id),
+  CONSTRAINT strategy_outcomes_id_relationship_unique UNIQUE (id, relationship_id)
 );
 
 -- ---------------------------------------------------------------- vault
@@ -372,11 +391,125 @@ CREATE TABLE memory_chunks (
   summary         text NOT NULL,
   embedding       vector(1536),
   source_ids      uuid[] NOT NULL DEFAULT '{}',
+  source_kind     text,
   sensitivity     sensitivity NOT NULL DEFAULT 'standard',
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT memory_sources_are_typed
+    CHECK (cardinality(source_ids) = 0 OR source_kind IS NOT NULL)
 );
 CREATE INDEX ON memory_chunks USING ivfflat (embedding vector_cosine_ops);
 CREATE INDEX ON memory_chunks (relationship_id, kind, created_at DESC);
+
+-- ------------------------------------------------------ reference integrity
+-- Composite scalar references cannot cross an account/dyad. Array references
+-- are checked at commit so a batch may insert sources and derived rows in any
+-- order without weakening validation.
+ALTER TABLE person_profiles
+  ADD CONSTRAINT person_profiles_supersedes_same_user
+  FOREIGN KEY (supersedes, user_id) REFERENCES person_profiles(id, user_id)
+  DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE person_profiles
+  ADD CONSTRAINT person_profiles_preference_model_same_person
+  FOREIGN KEY (preference_model_id, id) REFERENCES preference_models(id, person_id)
+  DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE person_profiles
+  ADD CONSTRAINT person_profiles_voice_profile_same_person
+  FOREIGN KEY (voice_profile_id, id) REFERENCES voice_profiles(id, person_id)
+  DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE preference_evidence
+  ADD CONSTRAINT preference_evidence_interaction_same_relationship
+  FOREIGN KEY (source_interaction_id, relationship_id)
+  REFERENCES interactions(id, relationship_id);
+ALTER TABLE preference_evidence
+  ADD CONSTRAINT preference_evidence_outcome_same_relationship
+  FOREIGN KEY (source_strategy_outcome_id, relationship_id)
+  REFERENCES strategy_outcomes(id, relationship_id);
+
+CREATE OR REPLACE FUNCTION enforce_scoped_array_references() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE ref uuid; source_valid boolean;
+BEGIN
+  IF TG_TABLE_NAME = 'signals' THEN
+    FOREACH ref IN ARRAY NEW.evidence_message_ids LOOP
+      IF NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = ref AND m.interaction_id = NEW.interaction_id) THEN
+        RAISE EXCEPTION 'signal evidence message is outside its interaction' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  ELSIF TG_TABLE_NAME = 'relationship_states' THEN
+    FOREACH ref IN ARRAY NEW.computed_from LOOP
+      IF NOT EXISTS (SELECT 1 FROM interactions i WHERE i.id = ref AND i.relationship_id = NEW.relationship_id) THEN
+        RAISE EXCEPTION 'state input is outside its relationship' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  ELSIF TG_TABLE_NAME = 'preference_evidence' THEN
+    FOREACH ref IN ARRAY NEW.source_signal_ids LOOP
+      IF NOT EXISTS (SELECT 1 FROM signals s WHERE s.id = ref AND s.relationship_id = NEW.relationship_id) THEN
+        RAISE EXCEPTION 'preference signal is outside its relationship' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  ELSIF TG_TABLE_NAME = 'strategy_outcomes' THEN
+    FOREACH ref IN ARRAY NEW.evidence_interaction_ids LOOP
+      IF NOT EXISTS (SELECT 1 FROM interactions i WHERE i.id = ref AND i.relationship_id = NEW.relationship_id) THEN
+        RAISE EXCEPTION 'outcome evidence is outside its relationship' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  ELSIF TG_TABLE_NAME = 'voice_profiles' THEN
+    FOREACH ref IN ARRAY NEW.exemplar_message_ids LOOP
+      IF NOT EXISTS (
+        SELECT 1 FROM messages m JOIN interactions i ON i.id = m.interaction_id
+        JOIN relationships r ON r.id = i.relationship_id
+        JOIN person_profiles p ON p.id = NEW.person_id
+        WHERE m.id = ref AND r.user_id = p.user_id
+      ) THEN
+        RAISE EXCEPTION 'voice exemplar is outside its user' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  ELSIF TG_TABLE_NAME = 'consent_records' THEN
+    IF NEW.verbatim_ref IS NOT NULL THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM messages m JOIN interactions i ON i.id = m.interaction_id
+        WHERE m.id = NEW.verbatim_ref AND i.relationship_id = NEW.relationship_id
+      ) THEN
+        RAISE EXCEPTION 'consent statement is outside its relationship' USING ERRCODE = '23503';
+      END IF;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'memory_chunks' THEN
+    FOREACH ref IN ARRAY NEW.source_ids LOOP
+      source_valid := CASE NEW.source_kind
+        WHEN 'interaction' THEN (SELECT EXISTS (SELECT 1 FROM interactions x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'message' THEN (SELECT EXISTS (SELECT 1 FROM messages m JOIN interactions i ON i.id = m.interaction_id WHERE m.id = ref AND i.relationship_id = NEW.relationship_id))
+        WHEN 'signal' THEN (SELECT EXISTS (SELECT 1 FROM signals x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'state' THEN (SELECT EXISTS (SELECT 1 FROM relationship_states x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'preference_evidence' THEN (SELECT EXISTS (SELECT 1 FROM preference_evidence x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'strategy' THEN (SELECT EXISTS (SELECT 1 FROM strategy_records x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'outcome' THEN (SELECT EXISTS (SELECT 1 FROM strategy_outcomes x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        WHEN 'consent' THEN (SELECT EXISTS (SELECT 1 FROM consent_records x WHERE x.id = ref AND x.relationship_id = NEW.relationship_id))
+        ELSE false END;
+      IF NOT source_valid THEN
+        RAISE EXCEPTION 'memory source is missing, untyped, or outside its relationship' USING ERRCODE = '23503';
+      END IF;
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+REVOKE ALL ON FUNCTION enforce_scoped_array_references() FROM PUBLIC;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'signals','relationship_states','preference_evidence','strategy_outcomes',
+    'voice_profiles','consent_records','memory_chunks'
+  ] LOOP
+    EXECUTE format(
+      'CREATE CONSTRAINT TRIGGER %I_scoped_references AFTER INSERT OR UPDATE ON %I
+       DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+       EXECUTE FUNCTION enforce_scoped_array_references()', t, t
+    );
+  END LOOP;
+END
+$$;
 
 
 -- ------------------------------------------------------- cross-dyad priors

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .llm.configuration import ProviderConfig, RouteHop
 
@@ -69,6 +70,23 @@ class Settings(BaseSettings):
     # Data-driven provider registry and ordered task.track route chains. These
     # are JSON objects in environment variables. Legacy provider/model fields
     # below are translated when a route is not present here.
+    # Providers the OPERATOR vouches for on safety-critical work, by name.
+    #
+    # EXTRACT and CRITIC are otherwise restricted to first-party endpoints,
+    # because a reseller or aggregator does not even guarantee which weights
+    # served a request. That default is deliberate and it is not free to
+    # override: those two tasks exist to notice discomfort, boundaries and
+    # pressure, and a model tuned not to refuse is also tuned not to notice.
+    # The failure is silent -- boundary_risk comes back low for everything and
+    # the Critic starts passing what it should block.
+    #
+    # It is still the operator's system and the operator's risk, so this
+    # exists. It has to be named explicitly, it is logged at WARNING on every
+    # startup, and `sonder llm validate` prints those providers as
+    # `operator-trusted` rather than `safety-trusted`. Accepts a JSON list or
+    # a comma-separated string.
+    safety_trusted_providers: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
     llm_providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     llm_routes: dict[str, list[RouteHop]] = Field(default_factory=dict)
 
@@ -122,6 +140,26 @@ class Settings(BaseSettings):
     request_timeout_s: float = 90.0
     telegram_token: str | None = None
     log_level: str = "INFO"
+
+    @field_validator("safety_trusted_providers", mode="before")
+    @classmethod
+    def _split_provider_names(cls, value):
+        """Accept `a,b` as well as `["a","b"]`.
+
+        `NoDecode` is what makes this reachable: without it pydantic-settings
+        JSON-decodes the raw value before any validator runs, so a plain
+        comma-separated string fails to parse rather than arriving here.
+        """
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
 
 
 @lru_cache

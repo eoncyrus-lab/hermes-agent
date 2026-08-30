@@ -42,6 +42,23 @@ SELECTED: dict[int, tuple[UUID, str]] = {}
 
 _PRIVATE_ONLY = "Sonder relationship features are only available in a private chat."
 
+
+def _unlinked_message(telegram_id: int) -> str:
+    """Tell the person the one thing the operator needs to link them.
+
+    A bare "not linked" is a dead end: the Telegram user id is not visible to
+    the person in the chat, and it is what `sonder telegram link` takes. It is
+    logged as well, so the operator can link an account without the person
+    having to read a number back to them.
+    """
+    log.info("unlinked_chat", telegram_id=telegram_id)
+    return (
+        "This chat is not linked to an account.\n\n"
+        f"Your Telegram ID is {telegram_id} — send it to whoever runs this "
+        "instance and ask them to link it."
+    )
+
+
 # Must match the API's; both write the same column.
 ACTIONS = frozenset({"sent_verbatim", "sent_edited", "discarded"})
 
@@ -95,9 +112,7 @@ async def require_context(update: Update) -> tuple[Identity, UUID, str] | None:
     tg_id = update.effective_user.id
     identity = await resolve_account(tg_id)
     if identity is None:
-        await update.effective_message.reply_text(
-            "This chat is not linked to an account."
-        )
+        await update.effective_message.reply_text(_unlinked_message(tg_id))
         return None
     chosen = SELECTED.get(update.effective_chat.id)
     if chosen is None:
@@ -142,6 +157,12 @@ async def require_context(update: Update) -> tuple[Identity, UUID, str] | None:
 async def start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if not await require_private_chat(update):
         return
+    # /start is the first thing anyone types, so it is the wrong place to hand
+    # back a menu of commands that will all refuse. An unlinked chat gets the
+    # one instruction that actually moves it forward.
+    if await resolve_account(update.effective_user.id) is None:
+        await update.message.reply_text(_unlinked_message(update.effective_user.id))
+        return
     await update.message.reply_text(
         "Sonder.\n\n"
         "/who <relationship UUID> — choose who we're talking about\n"
@@ -161,7 +182,7 @@ async def who(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     identity = await resolve_account(update.effective_user.id)
     if identity is None:
-        await update.message.reply_text("This chat is not linked to an account.")
+        await update.message.reply_text(_unlinked_message(update.effective_user.id))
         return
 
     from sqlalchemy import select
@@ -211,7 +232,7 @@ async def list_relationships(update: Update, _: ContextTypes.DEFAULT_TYPE) -> No
         return
     identity = await resolve_account(update.effective_user.id)
     if identity is None:
-        await update.message.reply_text("This chat is not linked to an account.")
+        await update.message.reply_text(_unlinked_message(update.effective_user.id))
         return
 
     from sqlalchemy import select

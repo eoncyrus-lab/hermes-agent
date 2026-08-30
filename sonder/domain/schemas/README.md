@@ -1,7 +1,7 @@
 # The five locked schemas
 
-Source of truth is the Python. The SQL in `storage/postgres/001_core.sql`
-mirrors it. Changing either without the other is a bug.
+Source of truth is the Python. SQL migrations live in `migrations/`; changing
+one layer without checking the other is a bug.
 
 | # | Schema | Layer | Mutability |
 |---|--------|-------|-----------|
@@ -63,7 +63,7 @@ because that is where person A's data reaches person B.
 | dyad (`relationship_id`) | target profile, state, interactions, signals, preferences, strategies, memory, vault, consent | hard isolated |
 | global | skills, knowledge | shared, contains no person data |
 
-Enforced at three layers, because the application layer will eventually
+Enforced at two active layers, because the application layer will eventually
 forget a `WHERE` clause exactly once:
 
 1. `relationship_id` is NOT NULL on every dyad-scoped table. A nullable scope
@@ -71,8 +71,12 @@ forget a `WHERE` clause exactly once:
    A's inside joke as context for B.
 2. Postgres RLS with `app.relationship_id`. A forgotten filter returns
    nothing instead of returning someone else.
-3. `CriticScores.cross_dyad_leak_risk` gates hard at 0.05, scored by exact
-   match against other dyads' memory rather than by model judgement.
+
+`CriticScores.cross_dyad_leak_risk` and the deterministic matcher remain for a
+future, separately authenticated user-scoped reader. Production deliberately
+does not fetch other dyads' text: the former database oracle is removed. A
+stored value of `0` currently means the check was unavailable, not that a
+cross-dyad comparison ran and passed.
 
 **The one sanctioned channel between relationships** is `UserTacticPrior`:
 Beta parameters for a tactic key, no person, no text, no context. It seeds

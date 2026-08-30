@@ -14,6 +14,7 @@ from pathlib import Path
 MIGRATIONS = Path(__file__).parents[2] / "migrations"
 SECURITY = MIGRATIONS / "002_security_boundaries.sql"
 IDENTITY = MIGRATIONS / "003_identity_and_idempotency.sql"
+INTEGRITY = MIGRATIONS / "004_integrity_and_idempotency.sql"
 
 
 def test_security_migration_requires_admin_and_removes_cross_dyad_oracle():
@@ -121,14 +122,28 @@ def test_the_identity_role_is_granted_no_table_privileges():
         assert any(token in line for token in allowed), line
 
 
-def test_the_identity_claim_is_verified_against_a_live_token():
+def test_the_identity_claim_is_short_lived_signed_and_source_bound():
     """Setting app.user_id must prove nothing on its own."""
     sql = IDENTITY.read_text()
-    assert "FROM api_tokens t" in sql
-    assert "t.token_sha256 = NULLIF(current_setting('app.identity_claim'" in sql
+    assert "sonder_private.identity_signing_key" in sql
+    assert "gen_random_bytes(32)" in sql
+    assert "hmac(" in sql
+    assert "interval '5 minutes'" in sql
+    assert "p.source_kind = 'b'" in sql
+    assert "p.source_kind = 't'" in sql
     assert "t.revoked_at IS NULL" in sql
     assert "SECURITY DEFINER" in sql
-    assert "SET search_path = public, pg_temp" in sql
+    assert "SET search_path = pg_catalog, public" in sql
+
+
+def test_app_role_has_no_vault_or_identity_table_grants():
+    security = SECURITY.read_text()
+    identity = IDENTITY.read_text()
+    assert (
+        "REVOKE ALL ON api_tokens, telegram_accounts, vault_records FROM sonder_app"
+        in security
+    )
+    assert "REVOKE ALL ON vault_records FROM sonder_app" in identity
 
 
 def test_recompute_idempotency_is_enforced_by_the_schema():
@@ -137,3 +152,34 @@ def test_recompute_idempotency_is_enforced_by_the_schema():
     assert "relationship_states_relationship_fingerprint_unique" in sql
     assert "preference_models_relationship_fingerprint_unique" in sql
     assert "VALIDATE CONSTRAINT relationship_states_supersedes_same_relationship" in sql
+
+
+def test_integrity_migration_fails_closed_and_checks_polymorphic_references():
+    sql = INTEGRITY.read_text()
+    assert "integrity preflight" in sql
+    assert "cannot infer memory source_kind" in sql
+    assert "DEFERRABLE INITIALLY DEFERRED" in sql
+    assert "CREATE CONSTRAINT TRIGGER" in sql
+    for field in (
+        "evidence_message_ids",
+        "computed_from",
+        "source_signal_ids",
+        "evidence_interaction_ids",
+        "exemplar_message_ids",
+        "verbatim_ref",
+        "source_ids",
+        "source_kind",
+    ):
+        assert field in sql
+
+
+def test_fresh_schema_contains_the_same_integrity_guards():
+    sql = (MIGRATIONS / "001_core.sql").read_text()
+    for marker in (
+        "input_fingerprint",
+        "memory_sources_are_typed",
+        "strategy_records_preference_same_relationship",
+        "person_profiles_supersedes_same_user",
+        "enforce_scoped_array_references",
+    ):
+        assert marker in sql

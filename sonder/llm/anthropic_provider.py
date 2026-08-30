@@ -35,10 +35,20 @@ class AnthropicProvider(LLMProvider):
     ) -> Completion:
         import anthropic
 
+        # `temperature` is deliberately not forwarded. The Messages API dropped
+        # it from the typed signature in anthropic 1.x -- passing it raises
+        # TypeError before the request is even built, which took extraction
+        # and the Critic (the two tasks that may only run here) down with it.
+        # The parameter stays in this signature because the provider interface
+        # is shared with the OpenAI-compatible path, which still honours it.
+        #
+        # This does lose something real: `structured()` asked for 0.2 to keep
+        # extraction close to deterministic, and there is no longer a knob for
+        # that. `output_config.effort` is the SDK's replacement and is not an
+        # equivalent, so choosing a setting needs a decision and a live key.
         kw: dict = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "messages": to_anthropic_messages(messages),
         }
         if system:

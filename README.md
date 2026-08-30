@@ -26,7 +26,7 @@ sonder/agent/            skills, context, strategy, generator, humanizer, critic
 sonder/learning/         outcome scoring, calibration, cross-person priors
 sonder/api|bot|worker/   FastAPI, Telegram, arq pipeline
 skills/                  eight domain skills (knowledge, never people)
-migrations/001_core.sql  the schema, with RLS and append-only enforcement
+migrations/001..004      schema, security roles, identity and integrity upgrades
 evals/                   calibration, leakage and hallucination suites
 tests/                   invariant, calibration, integration and isolation tests
 ```
@@ -65,15 +65,19 @@ Every table is either user-scoped or dyad-scoped; nothing is both.
 | dyad | target profile, state, interactions, signals, preferences, strategies, memory, consent | hard isolated |
 | global | skills | shared, contains no person data |
 
-Enforced three times over, because the application layer will forget a `WHERE`
-clause exactly once:
+Enforced by two active layers, because the application layer will forget a
+`WHERE` clause exactly once:
 
 1. `relationship_id NOT NULL` on every dyad-scoped table, and a `Scope`
    object that repositories require as their first argument
 2. Postgres RLS keyed on `app.relationship_id` — verified: a query that
    drops its filter returns zero rows, and an unscoped session sees nothing
-3. `CriticScores.cross_dyad_leak_risk`, a mechanical match against other
-   relationships' callbacks, gating hard at 0.05
+
+The deterministic `cross_dyad_leak` helper remains dormant for a future
+separately authenticated, user-scoped reader. Production does not fetch other
+relationships' text, and `cross_dyad_leak_risk=0` currently means unavailable,
+not “compared and clean.” The former database oracle was removed rather than
+granting a shared service role cross-dyad text access.
 
 The one sanctioned channel between relationships is `UserTacticPrior`: Beta
 parameters for a tactic key, no person, no text, no context, minimum three
@@ -95,14 +99,22 @@ Conflating the two is what makes assistants either slow or shallow.
 
 Call sites name a `Task` and, where it matters, a `Track` — never a model and
 never a vendor. Extraction runs cheap, the Humanizer runs on whatever writes
-best, and a `ContentPolicyRefusal` fails over rather than dead-ending. Any
-OpenAI-compatible endpoint works — OpenRouter, Together, vLLM, Ollama, local.
+best, and a refusal or exhausted provider error follows the configured chain.
+OpenAI-compatible Chat Completions endpoints work; a provider configured for
+the Responses protocol fails fast until that protocol is implemented.
 
 ### Adding a vendor
 
-MiniMax, DeepSeek, OpenRouter and OpenCode Zen each need one API key; the
-profile supplies the endpoint and protocol. A private gateway or a second
-account is a `SONDER_LLM_PROVIDERS` entry naming an existing profile.
+MiniMax, DeepSeek, OpenRouter and OpenCode Zen can coexist. Each needs its own
+API key; the profile supplies the endpoint and Chat Completions protocol. A
+private gateway or second account is a named `SONDER_LLM_PROVIDERS` entry.
+
+| profile | default endpoint | model note |
+|---|---|---|
+| [MiniMax](https://api.minimax.io/v1) | `https://api.minimax.io/v1` | set a mainland-China base explicitly when required |
+| [DeepSeek](https://api-docs.deepseek.com/) | `https://api.deepseek.com` | examples: `deepseek-v4-flash`, `deepseek-v4-pro` |
+| [OpenRouter](https://openrouter.ai/docs/guides/routing/routers/free-router) | `https://openrouter.ai/api/v1` | `openrouter/free` and `:free` availability changes |
+| [OpenCode Zen](https://dev.opencode.ai/docs/zen/) | `https://opencode.ai/zen/v1` | choose a currently listed chat-compatible free model |
 
 Routes are ordered chains, keyed `"<task>.<track>"`. The first hop this
 deployment has configured serves; a policy refusal moves to the next:
@@ -111,7 +123,7 @@ deployment has configured serves; a policy refusal moves to the next:
 SONDER_DEEPSEEK_API_KEY=...
 SONDER_OPENROUTER_API_KEY=...
 SONDER_LLM_ROUTES={"generate.standard":[
-  {"provider":"deepseek","model":"deepseek-chat"},
+  {"provider":"deepseek","model":"deepseek-v4-flash"},
   {"provider":"openrouter","model":"openrouter/free"}]}
 ```
 
@@ -132,12 +144,15 @@ Check a deployment before it serves traffic:
 
 ```bash
 sonder llm validate                          # resolve and guard every route
-sonder llm smoke --provider deepseek --model deepseek-chat
+sonder llm smoke provider deepseek --model deepseek-v4-flash
+sonder llm smoke route generate --track standard
 ```
 
-`validate` resolves all twelve task × track routes, prints each provider's
-trust level and each chain's failover order, and exits non-zero on an unsafe
-or incoherent configuration. `smoke` sends one real eight-token completion.
+`validate` resolves all twelve task × track routes, reports enabled and
+disabled providers, prints trust and failover order, and exits non-zero on an
+unsafe or incoherent configuration. Provider smoke calls one named endpoint;
+route smoke exercises normal resolution and ordered fallback. Neither assumes
+every vendor implements `/models`.
 
 ### The intimate track
 
@@ -160,10 +175,9 @@ and every candidate still passes the Critic.
 
 Use a leading `/intimate` to select this track explicitly when a request does
 not contain an obvious classifier keyword. The prefix is stripped before the
-request reaches a model. Local and custom provider endpoints are always
-treated as untrusted/permissive for routing purposes; the legacy
-`local_is_permissive` setting cannot promote one into extraction or Critic
-work. Verify a configured vLLM/Ollama-compatible endpoint with
+request reaches a model. Local and custom provider endpoints are permanently
+untrusted for safety-critical routing; configuration cannot promote one.
+Verify a configured vLLM/Ollama-compatible endpoint with
 `sonder llm smoke-local`, which checks both `/models` and a real chat
 completion.
 
@@ -183,13 +197,16 @@ no path to runtime settings, so it never changes a ceiling automatically.
 ## Running it
 
 ```bash
-cp .env.example .env         # set the five role passwords and a provider key
+cp .env.example .env
+# Generate POSTGRES_PASSWORD, the six service-role passwords, and the Redis
+# password separately: openssl rand -hex 32
+# Then set at least one provider API key and every other required secret.
 docker compose up -d db redis
 docker compose up api worker
 docker compose --profile bot up bot
 
 # locally
-python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ./scripts/check.sh
 ```
 
@@ -199,6 +216,13 @@ at all — and `scripts/db-roles.sh` sets them from the environment on each
 `up`, which is also the rotation path. Compose refuses to start if one is
 unset rather than falling back to a default. Postgres and Redis publish no
 host port; the API publishes only on loopback.
+
+Use `openssl rand -hex 32` independently for every password embedded in a DSN.
+Hex avoids URL delimiter characters. If an externally managed password uses
+characters such as `:/@?#[]`, percent-encode the password component before
+embedding it. Required Compose secrets are `POSTGRES_PASSWORD`, all six
+`SONDER_*_DB_PASSWORD` values, and `SONDER_REDIS_PASSWORD`; provider and vault
+credentials are required when their corresponding features are enabled.
 
 ## Database identities
 
@@ -257,34 +281,26 @@ index, 1536-dimensional writes and search order, wrong-dimension rejection,
 and cross-relationship isolation. Missing Docker or an unavailable daemon is
 an explicit failure, never a green skipped run. CI calls the same script.
 
-### Two database roles, and the split is the point
+### Migration and role installation
 
-```sql
-CREATE ROLE sonder_app   LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '...';
-CREATE ROLE sonder_maint LOGIN NOSUPERUSER BYPASSRLS   PASSWORD '...';
-GRANT USAGE ON SCHEMA public TO sonder_app, sonder_maint;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
-  TO sonder_app, sonder_maint;
-```
+Apply migrations as an administrative migration identity, in numeric order:
 
-`sonder_app` serves every request and cannot bypass RLS. `sonder_maint`
-(`SONDER_MAINTENANCE_DATABASE_URL`) is used only by erasure, outcome scoring
-and artifact purging, which legitimately span relationships — and those
-callers do their own ownership checks, because RLS is not covering them.
+1. `001_core.sql` creates the schema, base constraints, RLS and service roles
+   without login passwords.
+2. `002_security_boundaries.sql` tightens ownership constraints and removes
+   the unsafe cross-dyad text oracle.
+3. `003_identity_and_idempotency.sql` installs verified identity RPCs,
+   least-privilege role grants and replay-safe ingest primitives.
+4. `004_integrity_and_idempotency.sql` adds the remaining composite ownership
+   references and idempotency constraints after fail-closed preflight checks.
 
-Running the app as the table owner or a superuser silently disables every
-policy above. The default Compose deployment creates these roles during
-database initialization and pins API/worker traffic to `sonder_app`, with the
-separate maintenance DSN pinned to `sonder_maint`. For an existing database,
-run `migrations/002_security_boundaries.sql` as a PostgreSQL superuser before
-switching DSNs; it aborts if any relationship currently points at a profile
-owned by another user, or if any derived row mixes relationship ownership.
-
-Then run `migrations/003_identity_and_idempotency.sql`, as the same superuser.
-It is not optional for an existing deployment: `identity_factory` has no
-fallback DSN, so code upgraded without it loses authentication outright. Both
-files are rerunnable in any order, and application, maintenance and
-authentication roles are all rejected as migration identities.
+Do not run the application as the table owner or a superuser: either silently
+defeats RLS. After migrations, `scripts/db-roles.sh` assigns independently
+generated passwords to the six service identities. Existing installations
+must apply all four files in order before switching application code or DSNs;
+preflight failures require repairing the reported inconsistent rows before
+retrying. Application, identity, worker and maintenance service roles are not
+migration identities.
 
 Cross-relationship text comparison in the leak critic is disabled. A shared
 application role plus caller-set relationship scope cannot safely authenticate

@@ -490,7 +490,7 @@ async def test_screenshot_job_replay_recomputes_after_post_commit_crash(monkeypa
                 return SimpleNamespace(user_id=UID, target_person_id=uuid4())
             return object()
 
-        yield SimpleNamespace(get=get)
+        yield SimpleNamespace(get=get, execute=AsyncMock())
 
     parse = AsyncMock()
     extract = AsyncMock()

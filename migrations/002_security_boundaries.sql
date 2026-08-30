@@ -185,14 +185,14 @@ ALTER ROLE sonder_maint NOSUPERUSER NOCREATEDB NOCREATEROLE
 GRANT USAGE ON SCHEMA public TO sonder_app, sonder_maint;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
   TO sonder_maint;
--- Safe to include sonder_app: default privileges apply only to tables created
--- after this runs, so they can never re-grant api_tokens. Without the app role
--- here, the next migration that adds a table leaves every API path unable to
--- read it.
+-- A new table gets no request-path access until its ownership policy and
+-- grants are reviewed. Maintenance is the only default grant.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sonder_app, sonder_maint;
+  REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM sonder_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sonder_maint;
 
--- Every table EXCEPT api_tokens, and never `ON ALL TABLES` for this role.
+-- Explicit business-table allow-list, and never `ON ALL TABLES` for this role.
 --
 -- This file is rerunnable and the README tells operators to rerun it, so a
 -- blanket grant here silently undoes 003's `REVOKE ALL ON api_tokens FROM
@@ -203,8 +203,12 @@ DO $$
 DECLARE t text;
 BEGIN
   FOR t IN
-    SELECT tablename FROM pg_tables
-     WHERE schemaname = 'public' AND tablename <> 'api_tokens'
+    SELECT unnest(ARRAY[
+      'users','person_profiles','voice_profiles','relationships','interactions',
+      'messages','signals','relationship_states','preference_evidence',
+      'preference_models','strategy_records','strategy_outcomes',
+      'consent_records','memory_chunks','user_tactic_priors'
+    ])
   LOOP
     EXECUTE format(
       'GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO sonder_app', t
@@ -212,7 +216,7 @@ BEGIN
   END LOOP;
 END
 $$;
-REVOKE ALL ON api_tokens FROM sonder_app;
+REVOKE ALL ON api_tokens, telegram_accounts, vault_records FROM sonder_app;
 
 DO $$
 BEGIN

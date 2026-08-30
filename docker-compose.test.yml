@@ -3,8 +3,14 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: sonder
-      POSTGRES_PASSWORD: sonder
+      POSTGRES_PASSWORD: ${SONDER_TEST_POSTGRES_PASSWORD:?set SONDER_TEST_POSTGRES_PASSWORD}
       POSTGRES_DB: sonder_test
+      SONDER_TEST_APP_DB_PASSWORD: ${SONDER_TEST_APP_DB_PASSWORD:?set SONDER_TEST_APP_DB_PASSWORD}
+      SONDER_TEST_MAINT_DB_PASSWORD: ${SONDER_TEST_MAINT_DB_PASSWORD:?set SONDER_TEST_MAINT_DB_PASSWORD}
+      SONDER_TEST_IDENTITY_DB_PASSWORD: ${SONDER_TEST_IDENTITY_DB_PASSWORD:?set SONDER_TEST_IDENTITY_DB_PASSWORD}
+      SONDER_TEST_ERASURE_DB_PASSWORD: ${SONDER_TEST_ERASURE_DB_PASSWORD:?set SONDER_TEST_ERASURE_DB_PASSWORD}
+      SONDER_TEST_WORKER_DB_PASSWORD: ${SONDER_TEST_WORKER_DB_PASSWORD:?set SONDER_TEST_WORKER_DB_PASSWORD}
+      SONDER_TEST_BOT_DB_PASSWORD: ${SONDER_TEST_BOT_DB_PASSWORD:?set SONDER_TEST_BOT_DB_PASSWORD}
     ports:
       - "127.0.0.1:55432:5432"
     tmpfs:
@@ -13,9 +19,10 @@ services:
       - ./migrations/001_core.sql:/docker-entrypoint-initdb.d/01-core.sql:ro
       - ./migrations/002_security_boundaries.sql:/docker-entrypoint-initdb.d/02-security.sql:ro
       - ./migrations/003_identity_and_idempotency.sql:/docker-entrypoint-initdb.d/03-identity.sql:ro
+      - ./migrations/004_integrity_and_idempotency.sql:/docker-entrypoint-initdb.d/04-integrity.sql:ro
       # Last: the migrations create the service roles without a password, so
       # the suite has to give them one before it can connect as them.
-      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/04-roles.sql:ro
+      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/05-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sonder -d sonder_test"]
       interval: 2s

@@ -457,3 +457,54 @@ async def test_derived_rows_cannot_mix_relationship_ownership(db):
         with pytest.raises(IntegrityError):
             async with maintenance_session() as s:
                 await s.execute(text(statement), params)
+
+
+async def test_array_references_cannot_cross_relationships(db):
+    """Deferred triggers cover UUID arrays that ordinary FKs cannot express."""
+    from sonder.storage.db import maintenance_session
+
+    user_id = uuid4()
+    p1, p2, r1, r2, i1, i2, m1, m2 = (uuid4() for _ in range(8))
+    async with maintenance_session() as s:
+        await _seed(s, user_id, p1, r1, "A1")
+        await _seed(s, user_id, p2, r2, "A2")
+        await s.execute(
+            text(
+                "INSERT INTO interactions (id,relationship_id,channel,source,"
+                "started_at,extractor_version) VALUES "
+                "(:i1,:r1,'wechat','manual_entry',now(),'t'),"
+                "(:i2,:r2,'wechat','manual_entry',now(),'t')"
+            ),
+            {"i1": i1, "r1": r1, "i2": i2, "r2": r2},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO messages (id,interaction_id,sender,sent_at,seq,"
+                "text_sha256) VALUES (:m1,:i1,'target',now(),1,'a'),"
+                "(:m2,:i2,'target',now(),1,'b')"
+            ),
+            {"m1": m1, "i1": i1, "m2": m2, "i2": i2},
+        )
+
+    with pytest.raises(DBAPIError, match="outside its interaction"):
+        async with maintenance_session() as s:
+            await s.execute(
+                text(
+                    "INSERT INTO signals (relationship_id,interaction_id,type,"
+                    "occurred_at,magnitude,confidence,by_speaker,"
+                    "evidence_message_ids,extractor_version) VALUES "
+                    "(:r1,:i1,'warmth',now(),0.5,0.5,'target',ARRAY[:m2]::uuid[],'t')"
+                ),
+                {"r1": r1, "i1": i1, "m2": m2},
+            )
+
+    with pytest.raises(DBAPIError, match="memory source"):
+        async with maintenance_session() as s:
+            await s.execute(
+                text(
+                    "INSERT INTO memory_chunks (relationship_id,kind,summary,"
+                    "source_ids,source_kind) VALUES "
+                    "(:r1,'fact','x',ARRAY[:i2]::uuid[],'interaction')"
+                ),
+                {"r1": r1, "i2": i2},
+            )

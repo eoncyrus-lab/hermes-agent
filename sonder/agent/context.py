@@ -35,7 +35,10 @@ class AgentContext:
     trends: list[Trend] = field(default_factory=list)
     memories: list = field(default_factory=list)
     voice: dict | None = None
-    other_dyad_phrases: set[str] = field(default_factory=set)
+    # None means the production cross-dyad reader is disabled. An empty set
+    # would mean a reader actually ran and found no phrases; keep those states
+    # distinct so a downstream risk=0 is never described as "checked".
+    other_dyad_phrases: set[str] | None = None
 
     # ---------------------------------------------------------------- render
 
@@ -175,8 +178,11 @@ async def build(
     # caller-set session scope cannot authenticate account ownership strongly
     # enough to expose another relationship's text, even to a leak detector.
     # The critic therefore degrades to its remaining boundary checks.
+    # Preserve the argument for call-site compatibility. Production cannot
+    # safely populate this without a separately authenticated, user-scoped
+    # reader, so both values leave the dormant helper unavailable.
     if include_leak_guard:
-        ctx.other_dyad_phrases = set()
+        ctx.other_dyad_phrases = None
 
     return ctx
 

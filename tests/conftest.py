@@ -25,7 +25,33 @@ IDENTITY_URL = os.environ.get("SONDER_IDENTITY_DATABASE_URL")
 # rerunnable in any order without giving a privilege back.
 SUPERUSER_URL = os.environ.get("SONDER_SUPERUSER_DATABASE_URL")
 
-_ENGINES = ("_engine", "_maint_engine", "_erasure_engine", "_worker_engine")
+
+@pytest.fixture(autouse=True)
+def _ignore_dotenv(monkeypatch):
+    """Keep a developer's real `.env` out of the suite.
+
+    `Settings` reads `.env`, so whoever has the app actually configured runs a
+    different test suite from everyone else: a local OpenRouter key and route
+    chain turned twelve provider tests red while the code was fine. Tests that
+    care about configuration build `Settings(...)` explicitly or set env vars,
+    so pointing the env_file at a path that does not exist costs nothing and
+    makes the run reproducible.
+    """
+    import sonder.config as config
+
+    monkeypatch.setitem(config.Settings.model_config, "env_file", None)
+    config.settings.cache_clear()
+    yield
+    config.settings.cache_clear()
+
+
+_ENGINES = (
+    "_engine",
+    "_maint_engine",
+    "_erasure_engine",
+    "_worker_engine",
+    "_identity_engine",
+)
 _FACTORIES = (
     ("_engine", "_factory"),
     ("_maint_engine", "_maint_factory"),
@@ -74,11 +100,8 @@ async def db(monkeypatch):
 def register(db):
     """Give a user id a live bearer token, and bind its claim for this test.
 
-    Every scoped session now has to present `app.identity_claim` -- the digest
-    of a live token for the same user -- because setting `app.user_id` alone
-    proves nothing to the row-level policies. Tests that used to invent a
-    user id out of thin air have to register it first, which is exactly what
-    the API does before it opens any session.
+    Every scoped session presents the short-lived HMAC returned by the
+    table-blind identity RPC. A raw digest or invented user id proves nothing.
     """
 
     async def _register(user_id: UUID) -> str:
@@ -95,8 +118,17 @@ def register(db):
                 ),
                 {"u": user_id, "d": digest},
             )
-        db.bind_identity(user_id, digest)
-        return digest
+        async with db.identity_session() as session:
+            row = (
+                await session.execute(
+                    text("SELECT identity_claim FROM auth_bearer(:digest)"),
+                    {"digest": digest},
+                )
+            ).first()
+        assert row is not None
+        claim = row.identity_claim
+        db.bind_identity(user_id, claim)
+        return claim
 
     return _register
 

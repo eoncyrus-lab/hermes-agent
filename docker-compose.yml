@@ -9,10 +9,15 @@
 x-db-env: &db-env
   SONDER_DATABASE_URL: postgresql+asyncpg://sonder_app:${SONDER_APP_DB_PASSWORD:?set SONDER_APP_DB_PASSWORD}@db:5432/sonder
   SONDER_IDENTITY_DATABASE_URL: postgresql+asyncpg://sonder_identity:${SONDER_IDENTITY_DB_PASSWORD:?set SONDER_IDENTITY_DB_PASSWORD}@db:5432/sonder
+  SONDER_REDIS_URL: redis://:${SONDER_REDIS_PASSWORD:?set SONDER_REDIS_PASSWORD}@redis:6379/0
 
 services:
   db:
     image: pgvector/pgvector:pg16
+    # A persistent deployment has to come back on its own after a reboot or a
+    # Docker restart. `unless-stopped` does that without overriding a
+    # deliberate `docker compose stop`.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: sonder
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -51,10 +56,23 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --requirepass "$${SONDER_REDIS_PASSWORD}"
+    environment:
+      SONDER_REDIS_PASSWORD: ${SONDER_REDIS_PASSWORD:?set SONDER_REDIS_PASSWORD}
     expose: ["6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$SONDER_REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   api:
     build: .
+    restart: unless-stopped
     command: uvicorn sonder.api.main:app --host 0.0.0.0 --port 8000
     ports: ["127.0.0.1:8000:8000"]
     env_file: .env
@@ -65,16 +83,29 @@ services:
       # erased -- which is why the API can hold it and could not hold
       # `sonder_maint`.
       SONDER_ERASURE_DATABASE_URL: postgresql+asyncpg://sonder_erase:${SONDER_ERASURE_DB_PASSWORD:?set SONDER_ERASURE_DB_PASSWORD}@db:5432/sonder
+      # env_file carries provider settings too; explicitly erase every raw DB
+      # secret and every out-of-scope DSN before the process starts.
+      POSTGRES_PASSWORD: ""
+      SONDER_APP_DB_PASSWORD: ""
+      SONDER_IDENTITY_DB_PASSWORD: ""
+      SONDER_ERASURE_DB_PASSWORD: ""
+      SONDER_WORKER_DB_PASSWORD: ""
+      SONDER_MAINT_DB_PASSWORD: ""
+      SONDER_BOT_DB_PASSWORD: ""
+      SONDER_WORKER_DATABASE_URL: ""
+      SONDER_MAINTENANCE_DATABASE_URL: ""
+      SONDER_BOT_DATABASE_URL: ""
     depends_on:
       db: {condition: service_healthy}
       db-roles: {condition: service_completed_successfully}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
 
   worker:
     build: .
     # Separate service on purpose: the ingest and analysis pipeline is slow,
     # expensive and low-concurrency, so it scales on a different curve to the
     # API and should not compete with it for capacity.
+    restart: unless-stopped
     command: arq sonder.worker.tasks.WorkerSettings
     env_file: .env
     environment:
@@ -84,13 +115,25 @@ services:
       # jobs that legitimately span users: outcome scoring and artifact
       # purging. Neither is reachable from a request.
       SONDER_MAINTENANCE_DATABASE_URL: postgresql+asyncpg://sonder_maint:${SONDER_MAINT_DB_PASSWORD:?set SONDER_MAINT_DB_PASSWORD}@db:5432/sonder
+      SONDER_REDIS_URL: redis://:${SONDER_REDIS_PASSWORD:?set SONDER_REDIS_PASSWORD}@redis:6379/0
+      POSTGRES_PASSWORD: ""
+      SONDER_APP_DB_PASSWORD: ""
+      SONDER_IDENTITY_DB_PASSWORD: ""
+      SONDER_ERASURE_DB_PASSWORD: ""
+      SONDER_WORKER_DB_PASSWORD: ""
+      SONDER_MAINT_DB_PASSWORD: ""
+      SONDER_BOT_DB_PASSWORD: ""
+      SONDER_IDENTITY_DATABASE_URL: ""
+      SONDER_ERASURE_DATABASE_URL: ""
+      SONDER_BOT_DATABASE_URL: ""
     depends_on:
       db: {condition: service_healthy}
       db-roles: {condition: service_completed_successfully}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
 
   bot:
     build: .
+    restart: unless-stopped
     command: python -m sonder.bot.telegram
     env_file: .env
     environment:
@@ -101,6 +144,18 @@ services:
       # and trade a hit for a working claim. The API must never get this DSN.
       # No erasure credential either: the bot has no erasure surface.
       SONDER_IDENTITY_DATABASE_URL: postgresql+asyncpg://sonder_bot:${SONDER_BOT_DB_PASSWORD:?set SONDER_BOT_DB_PASSWORD}@db:5432/sonder
+      SONDER_REDIS_URL: redis://:${SONDER_REDIS_PASSWORD:?set SONDER_REDIS_PASSWORD}@redis:6379/0
+      POSTGRES_PASSWORD: ""
+      SONDER_APP_DB_PASSWORD: ""
+      SONDER_IDENTITY_DB_PASSWORD: ""
+      SONDER_ERASURE_DB_PASSWORD: ""
+      SONDER_WORKER_DB_PASSWORD: ""
+      SONDER_MAINT_DB_PASSWORD: ""
+      SONDER_BOT_DB_PASSWORD: ""
+      SONDER_ERASURE_DATABASE_URL: ""
+      SONDER_WORKER_DATABASE_URL: ""
+      SONDER_MAINTENANCE_DATABASE_URL: ""
+      SONDER_BOT_DATABASE_URL: ""
     depends_on:
       db: {condition: service_healthy}
       db-roles: {condition: service_completed_successfully}

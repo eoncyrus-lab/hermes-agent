@@ -9,6 +9,7 @@ entirely. These tests are the ones that would have caught that.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -102,6 +103,7 @@ async def test_a_revoked_token_stops_authorising_immediately(db, register):
     async with maintenance_session() as s:
         await _seed(s, user_id, uuid4(), uuid4(), "Revocable")
     claim = await register(user_id)
+    digest = hashlib.sha256(f"test-token:{user_id}".encode()).hexdigest()
 
     async with user_session(UserScope(user_id, claim)) as s:
         assert (await s.execute(text("SELECT count(*) FROM relationships"))).scalar() == 1
@@ -109,16 +111,42 @@ async def test_a_revoked_token_stops_authorising_immediately(db, register):
     async with maintenance_session() as s:
         await s.execute(
             text("UPDATE api_tokens SET revoked_at = now() WHERE token_sha256 = :d"),
-            {"d": claim},
+            {"d": digest},
         )
 
     # No cache to invalidate: the policy re-reads the token every statement.
     async with user_session(UserScope(user_id, claim)) as s:
         assert (await s.execute(text("SELECT count(*) FROM relationships"))).scalar() == 0
 
+    from sonder.storage.db import identity_session
 
-async def test_the_request_role_cannot_read_the_token_table(db, register):
-    """Verifying a digest you hold is a smaller capability than listing them."""
+    async with identity_session() as s:
+        assert (
+            await s.execute(text("SELECT * FROM auth_bearer(:d)"), {"d": digest})
+        ).first() is None
+
+
+async def test_a_forged_or_expired_claim_sees_nothing(db, register):
+    from sonder.storage.db import maintenance_session, user_session
+    from sonder.storage.scope import UserScope
+
+    user_id = uuid4()
+    async with maintenance_session() as s:
+        await _seed(s, user_id, uuid4(), uuid4(), "Signed")
+    claim = await register(user_id)
+
+    kind, source, expires, signature = claim.split(":")
+    forged = ":".join((kind, source, expires, "0" * len(signature)))
+    expired = ":".join((kind, source, "1", signature))
+    for bad_claim in (forged, expired):
+        async with user_session(UserScope(user_id, bad_claim)) as s:
+            assert (
+                await s.execute(text("SELECT count(*) FROM relationships"))
+            ).scalar() == 0
+
+
+async def test_the_request_role_cannot_read_identity_or_vault_tables(db, register):
+    """Ordinary request SQL cannot list credentials or vault ciphertext."""
     from sqlalchemy.exc import ProgrammingError
 
     from sonder.storage.db import user_session
@@ -126,9 +154,14 @@ async def test_the_request_role_cannot_read_the_token_table(db, register):
 
     user_id = uuid4()
     claim = await register(user_id)
-    with pytest.raises(ProgrammingError, match="permission denied"):
-        async with user_session(UserScope(user_id, claim)) as s:
-            await s.execute(text("SELECT token_sha256 FROM api_tokens"))
+    for statement in (
+        "SELECT token_sha256 FROM api_tokens",
+        "SELECT ciphertext FROM vault_records",
+        "SELECT telegram_user_id FROM telegram_accounts",
+    ):
+        with pytest.raises(ProgrammingError, match="permission denied"):
+            async with user_session(UserScope(user_id, claim)) as s:
+                await s.execute(text(statement))
 
 
 async def test_the_identity_role_can_only_authenticate(db, register):
@@ -140,13 +173,14 @@ async def test_the_identity_role_can_only_authenticate(db, register):
         pytest.skip("SONDER_IDENTITY_DATABASE_URL not set")
 
     user_id = uuid4()
-    claim = await register(user_id)
+    await register(user_id)
+    digest = hashlib.sha256(f"test-token:{user_id}".encode()).hexdigest()
 
     async with identity_session() as s:
         row = (
             await s.execute(
                 text("SELECT user_id, identity_claim FROM auth_bearer(:d)"),
-                {"d": claim},
+                {"d": digest},
             )
         ).first()
     assert row is not None and row.user_id == user_id
@@ -481,6 +515,42 @@ async def test_only_the_bot_role_can_trade_a_telegram_id_for_a_claim(db, registe
     assert "sonder_bot" in grantees, "the bot cannot authenticate its own chats"
 
 
+async def test_telegram_auth_does_not_depend_on_an_api_token(db):
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from sonder.storage.db import maintenance_session, user_session
+    from sonder.storage.scope import UserScope
+
+    bot_url = os.environ.get("SONDER_BOT_DATABASE_URL")
+    if not bot_url:
+        pytest.skip("SONDER_BOT_DATABASE_URL not set")
+
+    user_id, telegram_id = uuid4(), 987654321
+    async with maintenance_session() as s:
+        await _seed(s, user_id, uuid4(), uuid4(), "Telegram")
+        await s.execute(
+            text(
+                "INSERT INTO telegram_accounts (telegram_user_id,user_id) VALUES (:tg,:u)"
+            ),
+            {"tg": telegram_id, "u": user_id},
+        )
+
+    engine = create_async_engine(bot_url)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text("SELECT * FROM auth_telegram(:tg)"), {"tg": telegram_id}
+                )
+            ).first()
+    finally:
+        await engine.dispose()
+
+    assert row is not None and row.user_id == user_id
+    async with user_session(UserScope(user_id, row.identity_claim)) as s:
+        assert (await s.execute(text("SELECT count(*) FROM relationships"))).scalar() == 1
+
+
 async def test_the_ttl_purge_can_actually_clear_a_source_artifact(db, register):
     """The retention promise depends on an UPDATE the schema used to forbid."""
     from sonder.storage.db import maintenance_session
@@ -575,16 +645,10 @@ async def test_the_purge_exemption_guards_columns_added_later(db, superuser):
         await superuser("ALTER TABLE interactions DROP COLUMN IF EXISTS smuggled;")
 
 
-async def test_a_table_added_after_the_migrations_is_readable_by_the_app_role(
+async def test_a_table_added_after_the_migrations_gets_no_implicit_service_grant(
     db, superuser
 ):
-    """Default privileges must still cover the request-path role.
-
-    Dropping `sonder_app` from `ALTER DEFAULT PRIVILEGES` closes nothing --
-    defaults only ever apply to tables that do not exist yet, so `api_tokens`
-    can never be caught by them -- but it does mean the next migration that
-    adds a table leaves every API path unable to read it.
-    """
+    """A new sensitive table requires a deliberate role grant and policy."""
     from sonder.storage.db import maintenance_session
 
     await superuser("CREATE TABLE IF NOT EXISTS later_table (id int primary key);")
@@ -602,9 +666,9 @@ async def test_a_table_added_after_the_migrations_is_readable_by_the_app_role(
                 for role in ("sonder_app", "sonder_erase", "sonder_worker")
             }
         assert readable == {
-            "sonder_app": True,
-            "sonder_erase": True,
-            "sonder_worker": True,
+            "sonder_app": False,
+            "sonder_erase": False,
+            "sonder_worker": False,
         }
     finally:
         await superuser("DROP TABLE IF EXISTS later_table;")

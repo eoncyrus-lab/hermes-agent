@@ -30,6 +30,18 @@ def test_vendor_slot_registers_from_a_single_api_key(vendor):
     assert vendor in r.providers
 
 
+def test_all_four_vendor_slots_can_coexist():
+    r = Router(
+        _cfg(
+            minimax_api_key="test",
+            deepseek_api_key="test",
+            openrouter_api_key="test",
+            zen_api_key="test",
+        )
+    )
+    assert set(VENDORS).issubset(r.providers)
+
+
 @pytest.mark.parametrize("vendor", VENDORS)
 def test_every_third_party_vendor_is_permissive(vendor):
     r = Router(_cfg(**{f"{vendor}_api_key": "test"}))
@@ -148,6 +160,42 @@ async def test_a_refusal_fails_over_along_the_chain():
     assert out.model == "openrouter/free"
 
 
+async def test_a_transient_provider_error_fails_over_in_declared_order():
+    from sonder.llm import Completion
+
+    class Provider:
+        def __init__(self, error=False):
+            self.error = error
+            self.calls: list[str] = []
+
+        async def complete(self, messages, **kw):
+            self.calls.append(kw["model"])
+            if self.error:
+                raise ProviderError("unavailable")
+            return Completion("ok", kw["model"])
+
+    cfg = _cfg(
+        deepseek_api_key="test",
+        openrouter_api_key="test",
+        llm_routes={
+            "generate.standard": [
+                {"provider": "deepseek", "model": "deepseek-chat"},
+                {"provider": "openrouter", "model": "openrouter/free"},
+            ]
+        },
+    )
+    r = Router(cfg)
+    failing, serving = Provider(error=True), Provider()
+    r._providers["deepseek"] = failing
+    r._providers["openrouter"] = serving
+
+    out = await r.complete(Task.GENERATE, [])
+
+    assert failing.calls == ["deepseek-chat"] * 3
+    assert serving.calls == ["openrouter/free"]
+    assert out.model == "openrouter/free"
+
+
 def test_a_hop_this_deployment_has_not_configured_is_skipped():
     cfg = _cfg(
         openrouter_api_key="test",
@@ -218,6 +266,20 @@ def test_a_declared_provider_cannot_claim_an_unknown_profile():
         Router(cfg)
 
 
+def test_responses_protocol_fails_fast_until_it_is_implemented():
+    cfg = _cfg(
+        llm_providers={
+            "future": {
+                "profile": "openrouter",
+                "api_key": "test",
+                "protocol": "responses",
+            }
+        }
+    )
+    with pytest.raises(ProviderError, match="supports only chat_completions"):
+        Router(cfg)
+
+
 def test_a_private_gateway_on_a_trusted_profile_loses_safety_trust():
     """The credential slot never confers trust; only the endpoint does."""
     cfg = Settings(
@@ -241,7 +303,23 @@ def test_openrouter_attribution_headers_are_sent():
     client = Router(cfg).provider("openrouter")._client
     headers = client.default_headers
     assert headers["HTTP-Referer"] == "https://sonder.example"
-    assert headers["X-Title"] == "Sonder"
+    assert headers["X-OpenRouter-Title"] == "Sonder"
+
+
+def test_declared_provider_without_a_key_is_disabled_not_instantiated():
+    cfg = _cfg(
+        llm_providers={"spare": {"profile": "openrouter"}},
+        llm_routes={
+            "generate.standard": [
+                {"provider": "spare", "model": "openrouter/free"},
+                {"provider": "anthropic", "model": "claude-opus-5"},
+            ]
+        },
+    )
+    r = Router(cfg)
+    assert "spare" not in r.providers
+    assert r.disabled_providers == {"spare": "missing API key"}
+    assert r.resolve(Task.GENERATE).provider_name == "anthropic"
 
 
 def test_vendor_base_url_override_is_honoured():
@@ -382,3 +460,108 @@ async def test_legacy_failover_between_two_providers_terminates():
     with pytest.raises(ContentPolicyRefusal):
         await r.structured(Task.GENERATE, [], object)
     assert calls == ["anthropic", "openai"]
+
+
+# ------------------------------------------------- the operator's override
+#
+# The default is that no third-party vendor may serve EXTRACT or CRITIC. That
+# default protects against a silent failure, not a loud one, so it is not left
+# to a passing thought -- but it is the operator's system, so there is a way
+# to say "I accept this", and it has to be said by name.
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("task", ["extract", "critic"])
+def test_an_operator_can_vouch_for_a_vendor(vendor, task):
+    cfg = _cfg(
+        **{f"{vendor}_api_key": "test"},
+        safety_trusted_providers=[vendor],
+        llm_routes={f"{task}.standard": [{"provider": vendor, "model": "m"}]},
+    )
+    router = Router(cfg)
+    route = router.resolve(Task(task), Track.STANDARD)
+    assert route.provider_name == vendor
+    assert route.permissive is False
+    assert vendor in router.vouched
+
+
+@pytest.mark.parametrize("vendor", VENDORS)
+def test_vouching_for_one_vendor_does_not_promote_another(vendor):
+    others = [v for v in VENDORS if v != vendor]
+    cfg = _cfg(
+        **{f"{v}_api_key": "test" for v in VENDORS},
+        safety_trusted_providers=[vendor],
+        llm_routes={
+            "extract.standard": [{"provider": others[0], "model": "m"}],
+        },
+    )
+    with pytest.raises(UnsafeRouting):
+        Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
+
+
+def test_the_override_is_off_by_default():
+    cfg = _cfg(
+        openrouter_api_key="test",
+        llm_routes={"extract.standard": [{"provider": "openrouter", "model": "m"}]},
+    )
+    router_cfg = Router(_cfg(openrouter_api_key="test"))
+    assert router_cfg.vouched == frozenset()
+    with pytest.raises(UnsafeRouting):
+        Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
+
+
+def test_the_guard_names_the_setting_that_lifts_it():
+    """An operator who hits this should not have to go reading the source."""
+    cfg = _cfg(
+        openrouter_api_key="test",
+        llm_routes={"extract.standard": [{"provider": "openrouter", "model": "m"}]},
+    )
+    with pytest.raises(UnsafeRouting, match="SONDER_SAFETY_TRUSTED_PROVIDERS"):
+        Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
+
+
+def test_vouching_for_an_unconfigured_provider_changes_nothing():
+    cfg = _cfg(openrouter_api_key="test", safety_trusted_providers=["deepseek"])
+    router = Router(cfg)
+    assert router.vouched == frozenset()
+    assert router.providers["openrouter"] is True
+
+
+def test_a_comma_separated_list_is_accepted(monkeypatch):
+    """Env vars are strings; JSON is not a friendly thing to ask an operator for."""
+    import sonder.config as config
+
+    monkeypatch.setenv("SONDER_SAFETY_TRUSTED_PROVIDERS", "openrouter, deepseek")
+    config.settings.cache_clear()
+    try:
+        assert config.Settings().safety_trusted_providers == ["openrouter", "deepseek"]
+    finally:
+        config.settings.cache_clear()
+
+
+def test_a_json_list_is_also_accepted(monkeypatch):
+    import sonder.config as config
+
+    monkeypatch.setenv("SONDER_SAFETY_TRUSTED_PROVIDERS", '["openrouter"]')
+    config.settings.cache_clear()
+    try:
+        assert config.Settings().safety_trusted_providers == ["openrouter"]
+    finally:
+        config.settings.cache_clear()
+
+
+def test_a_fully_third_party_deployment_validates_with_the_override():
+    """No Anthropic, no OpenAI, every route on one free-tier vendor."""
+    chain = [{"provider": "openrouter", "model": "minimax/minimax-m3:free"}]
+    cfg = Settings(
+        openrouter_api_key="test",
+        safety_trusted_providers=["openrouter"],
+        llm_routes={
+            f"{task.value}.{track.value}": chain for task in Task for track in Track
+        },
+    )
+    router = Router(cfg)
+    router.validate_routes()
+    assert router.vouched == frozenset({"openrouter"})
+    for task in Task:
+        assert router.resolve(task).provider_name == "openrouter"

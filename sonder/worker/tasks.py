@@ -109,34 +109,43 @@ async def ingest_screenshots(
     # State recomputation still runs below: the previous attempt may have
     # committed the interaction and signals, then crashed before that stage.
     async with worker_session(scope) as session:
+        from sqlalchemy import text
+
         from ..storage.models import InteractionRow
 
         if await authorize(session, scope) is None:
             return {"skipped": "no such relationship"}
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": str(ingest_id)},
+        )
         duplicate = await session.get(InteractionRow, ingest_id) is not None
+        if not duplicate:
+            # Keep the per-ingest lock while the expensive calls run. This is
+            # intentionally a narrow lock keyed by the content digest: a
+            # concurrent delivery of different screenshots is unaffected.
+            parsed = await ingest_mod.parse_screenshots(images)
+            interaction = ingest_mod.to_interaction(
+                parsed, scope.relationship_id, Channel(channel)
+            )
+            interaction = _with_stable_ingest_ids(interaction, ingest_id)
+
+            repo = InteractionRepo(session)
+            await repo.add(scope, interaction)
+
+            history = await repo.last_messages(scope, 200)
+            baseline = Baseline.from_rows(history, Speaker.TARGET)
+            signals = await extract_signals(
+                list(interaction.messages),
+                scope.relationship_id,
+                interaction.id,
+                baseline,
+            )
+            await SignalRepo(session).add_many(scope, signals)
+
     if duplicate:
         await recompute_state(ctx, user_id, relationship_id)
         return {"interaction_id": str(ingest_id), "duplicate": True}
-
-    parsed = await ingest_mod.parse_screenshots(images)
-    interaction = ingest_mod.to_interaction(
-        parsed, scope.relationship_id, Channel(channel)
-    )
-    interaction = _with_stable_ingest_ids(interaction, ingest_id)
-
-    async with worker_session(scope) as session:
-        repo = InteractionRepo(session)
-        await repo.add(scope, interaction)
-
-        history = await repo.last_messages(scope, 200)
-        baseline = Baseline.from_rows(history, Speaker.TARGET)
-        signals = await extract_signals(
-            list(interaction.messages),
-            scope.relationship_id,
-            interaction.id,
-            baseline,
-        )
-        await SignalRepo(session).add_many(scope, signals)
 
     await recompute_state(ctx, user_id, relationship_id)
     log.info(
@@ -156,9 +165,15 @@ async def ingest_screenshots(
 async def recompute_state(ctx, user_id: str, relationship_id: str) -> dict:
     scope = Scope(UUID(user_id), UUID(relationship_id))
     async with worker_session(scope) as session:
+        from sqlalchemy import text
+
         rel = await authorize(session, scope)
         if rel is None:
             return {"skipped": "no such relationship"}
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": str(scope.relationship_id)},
+        )
 
         signal_rows = await SignalRepo(session).since(scope, days=120)
         from ..domain.schemas.interaction import Signal, SignalType
@@ -308,6 +323,9 @@ class WorkerSettings:
         cron(purge_artifacts, hour={3}, minute={0}),
     ]
 
-    @staticmethod
-    def redis_settings() -> RedisSettings:
-        return RedisSettings.from_dsn(settings().redis_url)
+    # An attribute, not a method: arq reads `redis_settings` off this class and
+    # hands whatever it finds straight to `create_pool`. A staticmethod there
+    # gets passed through as the method object, and the worker dies on startup
+    # with `'staticmethod' object has no attribute 'host'` -- so the whole
+    # ingest and analysis pipeline never runs.
+    redis_settings = RedisSettings.from_dsn(settings().redis_url)

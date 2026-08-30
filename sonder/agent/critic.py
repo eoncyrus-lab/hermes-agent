@@ -1,11 +1,14 @@
 """The Critic (doc s55-56). Last gate before anything reaches the user.
 
-Three of the checks are mechanical rather than model-judged, because they are
-the ones where a bad day costs the most:
+Two active checks are mechanical rather than model-judged:
 
-  * cross-dyad leak: exact/near match against other relationships' callbacks
   * AI pattern density: deterministic scan
   * length sanity against the user's own register
+
+The cross-dyad matcher remains as a dormant, unit-tested helper. Production
+does not fetch other relationships' text because there is no safely
+authenticated cross-dyad reader. Its score field is therefore 0 as a schema
+compatibility sentinel, not evidence that a comparison ran.
 
 The rest are model-scored, and the model is asked to score, not to approve.
 """
@@ -37,7 +40,7 @@ def _tokens(text: str) -> set[str]:
 
 
 def cross_dyad_leak(text: str, other_phrases: set[str]) -> tuple[float, list[str]]:
-    """Mechanical check for another relationship's material appearing here.
+    """Dormant matcher for a future safely authenticated phrase source.
 
     Exact substring first, then a token-overlap fallback so a lightly reworded
     inside joke does not slip through. Deliberately blunt: a false positive
@@ -109,7 +112,13 @@ async def review(
 ) -> Verdict:
     reasons: list[str] = []
 
-    leak, leak_hits = cross_dyad_leak(text, other_dyad_phrases or set())
+    if other_dyad_phrases is None:
+        # CriticScores currently has no "unavailable" state. Zero preserves
+        # the schema but must not be reported as a completed leak comparison.
+        leak, leak_hits = 0.0, []
+        log.debug("cross_dyad_leak_check_disabled")
+    else:
+        leak, leak_hits = cross_dyad_leak(text, other_dyad_phrases)
     if leak_hits:
         reasons.append(f"references material from another relationship: {leak_hits[:2]}")
         log.warning("cross_dyad_leak_blocked", n_hits=len(leak_hits))

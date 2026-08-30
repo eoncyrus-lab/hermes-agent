@@ -86,7 +86,12 @@ class Router:
         self.cfg = cfg or settings()
         self._providers: dict[str, LLMProvider] = {}
         self._permissive: dict[str, bool] = {}
+        # Providers the operator named in safety_trusted_providers AND that
+        # would otherwise have been permissive -- i.e. the ones where the
+        # restriction was actually lifted, not merely named.
+        self._vouched: set[str] = set()
         self._profiles: dict[str, str] = {}
+        self._disabled: dict[str, str] = {}
         self._order: list[str] = []
         self._build()
 
@@ -169,7 +174,19 @@ class Router:
         protocol = declared.protocol or profile.protocol
         base_url = declared.base_url or profile.base_url
         headers = {**self._profile_headers(declared.profile), **declared.headers}
-        api_key = declared.api_key or ""
+        api_key = declared.api_key or getattr(
+            self.cfg, f"{declared.profile}_api_key", None
+        )
+        if not api_key:
+            # A missing credential disables only this provider. Keep the
+            # reason so `llm validate` can distinguish it from a typo.
+            if name in self._providers:
+                self._providers.pop(name)
+                self._permissive.pop(name)
+                self._profiles.pop(name)
+                self._order.remove(name)
+            self._disabled[name] = "missing API key"
+            return
         if protocol is Protocol.ANTHROPIC_MESSAGES:
             from .anthropic_provider import AnthropicProvider
 
@@ -207,15 +224,38 @@ class Router:
         if cfg.openrouter_http_referer:
             out["HTTP-Referer"] = cfg.openrouter_http_referer
         if cfg.openrouter_title:
-            out["X-Title"] = cfg.openrouter_title
+            out["X-OpenRouter-Title"] = cfg.openrouter_title
         return out
 
     def _register(self, name: str, provider: LLMProvider, *, permissive: bool) -> None:
+        # Every registration path funnels through here, so the operator
+        # override is applied once rather than in each of them.
+        if permissive and name in self._operator_trusted:
+            log.warning(
+                "operator_trusted_provider",
+                provider=name,
+                note=(
+                    "extraction and the Critic may now run on a provider whose "
+                    "model safety properties cannot be verified; a model tuned "
+                    "not to refuse is also tuned not to notice"
+                ),
+            )
+            permissive = False
+            self._vouched.add(name)
         if name in self._providers:
             self._order.remove(name)
         self._providers[name] = provider
         self._permissive[name] = permissive
         self._order.append(name)
+
+    @property
+    def _operator_trusted(self) -> frozenset[str]:
+        return frozenset(self.cfg.safety_trusted_providers)
+
+    @property
+    def vouched(self) -> frozenset[str]:
+        """Providers serving safety-critical work only because of an override."""
+        return frozenset(self._vouched)
 
     @property
     def providers(self) -> dict[str, bool]:
@@ -226,9 +266,16 @@ class Router:
         try:
             return self._providers[name]
         except KeyError:
+            detail = self._disabled.get(name)
+            if detail:
+                raise ProviderError(f"provider '{name}' is disabled: {detail}") from None
             raise ProviderError(
                 f"provider '{name}' is not configured in this deployment"
             ) from None
+
+    @property
+    def disabled_providers(self) -> dict[str, str]:
+        return dict(self._disabled)
 
     # -------------------------------------------------------------- routing
 
@@ -349,8 +396,13 @@ class Router:
             _guard(candidate)
             routes.append(candidate)
         if not routes:
+            disabled = sorted(
+                hop.provider for hop in hops if hop.provider in self._disabled
+            )
+            detail = f" (disabled: {', '.join(disabled)})" if disabled else ""
             raise ProviderError(
-                f"route '{key}' names only providers this deployment has not configured"
+                f"route '{key}' names only providers this deployment has not "
+                f"configured{detail}"
             )
         return routes
 
@@ -450,12 +502,12 @@ class Router:
                     temperature=temperature,
                 )
                 break
-            except ContentPolicyRefusal:
+            except ProviderError:
                 fallback = self._fallback(route, frozenset(tried))
                 if fallback is None:
                     raise
                 log.info(
-                    "policy_failover",
+                    "provider_failover",
                     frm=route.provider_name,
                     to=fallback.provider_name,
                     task=task.value,
@@ -535,12 +587,12 @@ class Router:
                     model=model,
                     **kw,
                 )
-            except ContentPolicyRefusal:
+            except ProviderError:
                 fallback = self._fallback(route, frozenset(tried))
                 if fallback is None:
                     raise
                 log.info(
-                    "policy_failover",
+                    "provider_failover",
                     frm=route.provider_name,
                     to=fallback.provider_name,
                     task=task.value,
@@ -557,7 +609,9 @@ def _guard(route: Route) -> None:
             "are not trusted. "
             "Signal extraction and criticism exist to notice discomfort, "
             "boundaries and pressure; a model trained not to refuse is also "
-            "trained not to notice, and the resulting failure is silent."
+            "trained not to notice, and the resulting failure is silent. "
+            f"If you accept that risk, name it in "
+            f"SONDER_SAFETY_TRUSTED_PROVIDERS."
         )
 
 

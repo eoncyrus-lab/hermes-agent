@@ -17,6 +17,26 @@ class _Response:
         return self.body
 
 
+def test_llm_smoke_has_provider_and_route_targets():
+    parser = cli._parser()
+    provider = parser.parse_args(
+        ["llm", "smoke", "provider", "deepseek", "--model", "deepseek-chat"]
+    )
+    route = parser.parse_args(
+        ["llm", "smoke", "route", "generate", "--track", "intimate"]
+    )
+    assert (provider.target, provider.name, provider.model) == (
+        "provider",
+        "deepseek",
+        "deepseek-chat",
+    )
+    assert (route.target, route.task, route.track) == (
+        "route",
+        "generate",
+        "intimate",
+    )
+
+
 async def test_smoke_local_checks_models_before_completion(monkeypatch, capsys):
     calls = []
 

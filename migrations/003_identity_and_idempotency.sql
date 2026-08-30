@@ -100,7 +100,8 @@ GRANT USAGE ON SCHEMA public TO sonder_identity, sonder_erase, sonder_worker,
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
   TO sonder_erase, sonder_worker;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sonder_erase, sonder_worker;
+  REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES
+  FROM sonder_app, sonder_erase, sonder_worker, sonder_identity, sonder_bot;
 
 -- Neither authentication role gets table privileges, now or by default.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM sonder_identity, sonder_bot;
@@ -109,25 +110,74 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM sonder_identity, sonder_bot;
 --
 -- The whole point of this function: `app.user_id` on its own is a claim, not
 -- a credential. A handler that sets it to someone else's id gets nothing back
--- unless the session also carries `app.identity_claim` -- the SHA-256 digest
--- of a live bearer token for that same user, which the caller can only have
--- if it was given the token.
+-- unless the session also carries a short-lived HMAC claim minted by an
+-- authentication RPC. The signing key is generated inside PostgreSQL and is
+-- unreadable by every service role.
 --
 -- SECURITY DEFINER because no service role may read api_tokens directly;
--- being able to verify a digest you already hold is a strictly smaller
--- capability than being able to list them.
+-- The verifier reveals no key material and returns only the authenticated id.
+CREATE SCHEMA IF NOT EXISTS sonder_private;
+REVOKE ALL ON SCHEMA sonder_private FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS sonder_private.identity_signing_key (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  secret bytea NOT NULL
+);
+INSERT INTO sonder_private.identity_signing_key (singleton, secret)
+VALUES (true, gen_random_bytes(32))
+ON CONFLICT (singleton) DO NOTHING;
+REVOKE ALL ON sonder_private.identity_signing_key FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION app_current_user_id() RETURNS uuid
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public
 AS $$
-  SELECT t.user_id
-    FROM api_tokens t
-   WHERE t.token_sha256 = NULLIF(current_setting('app.identity_claim', true), '')
-     AND t.revoked_at IS NULL
-     AND t.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
-   LIMIT 1
+  WITH context AS (
+    SELECT NULLIF(current_setting('app.user_id', true), '')::uuid AS user_id,
+           split_part(current_setting('app.identity_claim', true), ':', 1) AS source_kind,
+           split_part(current_setting('app.identity_claim', true), ':', 2) AS source_id,
+           NULLIF(split_part(current_setting('app.identity_claim', true), ':', 3), '') AS expires_text,
+           NULLIF(split_part(current_setting('app.identity_claim', true), ':', 4), '') AS signature
+  ), parsed AS (
+    SELECT user_id, source_kind, source_id,
+           CASE WHEN expires_text ~ '^[0-9]+$' THEN expires_text::bigint END AS expires_at,
+           signature
+      FROM context
+  )
+  SELECT p.user_id
+    FROM parsed p
+    CROSS JOIN sonder_private.identity_signing_key k
+   WHERE p.expires_at >= extract(epoch FROM now())::bigint
+     AND p.expires_at <= extract(epoch FROM now() + interval '10 minutes')::bigint
+     AND (
+       (p.source_kind = 'b' AND EXISTS (
+         SELECT 1 FROM public.api_tokens t
+          WHERE t.user_id = p.user_id
+            AND t.token_sha256 = p.source_id
+            AND t.revoked_at IS NULL
+       ))
+       OR
+       (p.source_kind = 't' AND p.source_id ~ '^[0-9]+$' AND EXISTS (
+         SELECT 1 FROM public.telegram_accounts t
+          WHERE t.user_id = p.user_id
+            AND t.telegram_user_id = CASE
+              WHEN p.source_id ~ '^[0-9]+$' THEN p.source_id::bigint
+              ELSE NULL
+            END
+       ))
+     )
+     AND p.signature = encode(
+       hmac(
+         convert_to(
+           p.user_id::text || ':' || p.source_kind || ':' || p.source_id || ':' || p.expires_at::text,
+           'UTF8'
+         ),
+         k.secret,
+         'sha256'
+       ),
+       'hex'
+     )
 $$;
 
 REVOKE ALL ON FUNCTION app_current_user_id() FROM PUBLIC;
@@ -142,13 +192,32 @@ RETURNS TABLE (user_id uuid, identity_claim text)
 LANGUAGE sql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public
 AS $$
-  UPDATE api_tokens
-     SET last_used_at = now()
-   WHERE token_sha256 = digest
-     AND revoked_at IS NULL
-  RETURNING api_tokens.user_id, api_tokens.token_sha256
+  WITH matched AS (
+    UPDATE public.api_tokens
+       SET last_used_at = now()
+     WHERE token_sha256 = digest
+       AND revoked_at IS NULL
+    RETURNING api_tokens.user_id
+  ), expiry AS (
+    SELECT user_id, extract(epoch FROM now() + interval '5 minutes')::bigint AS value
+      FROM matched
+  )
+  SELECT e.user_id,
+         'b:' || digest || ':' || e.value::text || ':' || encode(
+           hmac(
+             convert_to(
+               e.user_id::text || ':b:' || digest || ':' || e.value::text,
+               'UTF8'
+             ),
+             k.secret,
+             'sha256'
+           ),
+           'hex'
+         )
+    FROM expiry e
+    CROSS JOIN sonder_private.identity_signing_key k
 $$;
 
 REVOKE ALL ON FUNCTION auth_bearer(text) FROM PUBLIC;
@@ -168,14 +237,28 @@ RETURNS TABLE (user_id uuid, identity_claim text)
 LANGUAGE sql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public
 AS $$
-  SELECT t.user_id, k.token_sha256
-    FROM telegram_accounts t
-    JOIN api_tokens k ON k.user_id = t.user_id AND k.revoked_at IS NULL
-   WHERE t.telegram_user_id = chat_user_id
-   ORDER BY k.created_at
-   LIMIT 1
+  WITH matched AS (
+    SELECT t.user_id,
+           extract(epoch FROM now() + interval '5 minutes')::bigint AS expires_at
+      FROM public.telegram_accounts t
+     WHERE t.telegram_user_id = chat_user_id
+  )
+  SELECT m.user_id,
+         't:' || chat_user_id::text || ':' || m.expires_at::text || ':' || encode(
+           hmac(
+             convert_to(
+               m.user_id::text || ':t:' || chat_user_id::text || ':' || m.expires_at::text,
+               'UTF8'
+             ),
+             k.secret,
+             'sha256'
+           ),
+           'hex'
+         )
+    FROM matched m
+    CROSS JOIN sonder_private.identity_signing_key k
 $$;
 
 REVOKE ALL ON FUNCTION auth_telegram(bigint) FROM PUBLIC;
@@ -184,6 +267,8 @@ GRANT EXECUTE ON FUNCTION auth_telegram(bigint) TO sonder_bot;
 
 -- No service role reads the token table itself.
 REVOKE ALL ON api_tokens FROM sonder_app, sonder_erase, sonder_worker, sonder_bot;
+REVOKE ALL ON telegram_accounts FROM sonder_app, sonder_erase, sonder_worker;
+REVOKE ALL ON vault_records FROM sonder_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON api_tokens TO sonder_maint;
 
 -- ------------------------------------------------- user-scoped row security
