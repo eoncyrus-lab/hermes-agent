@@ -66,6 +66,7 @@ def test_preference_fingerprint_includes_priors_and_evidence():
 
 @pytest.mark.asyncio
 async def test_worker_rejects_mismatched_owner_before_llm_or_write(monkeypatch):
+    monkeypatch.setenv("SONDER_DATABASE_URL", "postgresql+asyncpg://app:test@db/sonder")
     import sonder.worker.tasks as tasks
 
     claimed_user, actual_user, relationship_id = uuid4(), uuid4(), uuid4()

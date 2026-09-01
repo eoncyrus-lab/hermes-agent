@@ -32,15 +32,20 @@ done
 
 set_password() {
   local role="$1" password="$2"
-  # The password goes in as a psql variable and comes out through :'pw', which
-  # quotes and escapes it -- so a password containing a quote stays a password
-  # instead of becoming a SQL fragment. It has to arrive on stdin: psql does
-  # not expand variables inside -c.
+  local command_file
+  command_file="$(mktemp "${TMPDIR:-/tmp}/sonder-db-role.XXXXXX")"
+  chmod 600 "$command_file"
+  trap 'rm -f "$command_file"' RETURN
+  # \prompt reads the secret from stdin. The command file contains only the
+  # fixed role and psql variable reference, so neither argv nor disk contains
+  # the password. :'pw' still provides psql's SQL-literal escaping.
   #
   # The role name is a fixed literal from the list below, never input.
-  psql --no-psqlrc --quiet --set=ON_ERROR_STOP=1 --set="pw=$password" <<SQL
-ALTER ROLE $role LOGIN PASSWORD :'pw';
-SQL
+  printf '%s\n' '\prompt pw' "ALTER ROLE $role LOGIN PASSWORD :'pw';" >"$command_file"
+  printf '%s\n' "$password" | \
+    psql --no-psqlrc --quiet --set=ON_ERROR_STOP=1 --file="$command_file"
+  rm -f "$command_file"
+  trap - RETURN
   echo "set password for $role"
 }
 

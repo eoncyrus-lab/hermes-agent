@@ -26,7 +26,7 @@ sonder/agent/            skills, context, strategy, generator, humanizer, critic
 sonder/learning/         outcome scoring, calibration, cross-person priors
 sonder/api|bot|worker/   FastAPI, Telegram, arq pipeline
 skills/                  eight domain skills (knowledge, never people)
-migrations/001..004      schema, security roles, identity and integrity upgrades
+migrations/              ordered SQL upgrades (currently 001 through 006)
 evals/                   calibration, leakage and hallucination suites
 tests/                   invariant, calibration, integration and isolation tests
 ```
@@ -207,6 +207,8 @@ docker compose --profile bot up bot
 
 # locally
 python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+# Required outside Compose; there is no baked-in database owner credential.
+export SONDER_DATABASE_URL=postgresql+asyncpg://sonder_app:...@localhost/sonder
 ./scripts/check.sh
 ```
 
@@ -293,11 +295,15 @@ Apply migrations as an administrative migration identity, in numeric order:
    least-privilege role grants and replay-safe ingest primitives.
 4. `004_integrity_and_idempotency.sql` adds the remaining composite ownership
    references and idempotency constraints after fail-closed preflight checks.
+5. `005_vault_scope_and_version_keys.sql` scopes vault records and strengthens
+   version-chain ownership keys after fail-closed preflight checks.
+6. `006_vault_ownership_and_cleanup.sql` binds relationship-scoped vault rows
+   to the same owning user and removes superseded integrity objects.
 
 Do not run the application as the table owner or a superuser: either silently
 defeats RLS. After migrations, `scripts/db-roles.sh` assigns independently
 generated passwords to the six service identities. Existing installations
-must apply all four files in order before switching application code or DSNs;
+must apply all six files in order before switching application code or DSNs;
 preflight failures require repairing the reported inconsistent rows before
 retrying. Application, identity, worker and maintenance service roles are not
 migration identities.

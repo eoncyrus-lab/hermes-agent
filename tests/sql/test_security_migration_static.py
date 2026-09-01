@@ -15,6 +15,8 @@ MIGRATIONS = Path(__file__).parents[2] / "migrations"
 SECURITY = MIGRATIONS / "002_security_boundaries.sql"
 IDENTITY = MIGRATIONS / "003_identity_and_idempotency.sql"
 INTEGRITY = MIGRATIONS / "004_integrity_and_idempotency.sql"
+VAULT_OWNERSHIP = MIGRATIONS / "006_vault_ownership_and_cleanup.sql"
+ROLE_SCRIPT = Path(__file__).parents[2] / "scripts" / "db-roles.sh"
 
 
 def test_security_migration_requires_admin_and_removes_cross_dyad_oracle():
@@ -183,3 +185,30 @@ def test_fresh_schema_contains_the_same_integrity_guards():
         "enforce_scoped_array_references",
     ):
         assert marker in sql
+
+
+def test_vault_relationship_is_bound_to_its_owning_user_on_fresh_and_upgrade():
+    fresh = (MIGRATIONS / "001_core.sql").read_text()
+    upgrade = VAULT_OWNERSHIP.read_text()
+    for sql in (fresh, upgrade):
+        assert "vault_records_relationship_same_user" in sql
+        assert "FOREIGN KEY (relationship_id, user_id)" in sql
+        assert "REFERENCES relationships(id, user_id)" in sql
+    assert "vault ownership preflight" in upgrade
+    assert "NOT VALID" in upgrade
+    assert "VALIDATE CONSTRAINT vault_records_relationship_same_user" in upgrade
+
+
+def test_integrity_upgrade_does_not_duplicate_fresh_schema_objects():
+    sql = INTEGRITY.read_text()
+    assert "person_profiles_supersedes_same_user_upgrade" in sql
+    assert "person_profiles_supersedes_same_user'," in sql
+    assert "t || '_scoped_references_upgrade'" in sql
+    assert "NOT EXISTS" in sql
+
+
+def test_database_role_password_is_not_passed_in_process_arguments():
+    script = ROLE_SCRIPT.read_text()
+    assert '--set="pw=$password"' not in script
+    assert "\\prompt pw" in script
+    assert "printf '%s\\n' \"$password\" |" in script

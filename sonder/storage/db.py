@@ -236,9 +236,10 @@ async def worker_session(scope: Scope) -> AsyncIterator[AsyncSession]:
 async def maintenance_session() -> AsyncIterator[AsyncSession]:
     """The few operations that legitimately span relationships.
 
-    Erasure, outcome scoring, artifact purging. Runs as a separate database
-    role which in production is the only one with BYPASSRLS -- so reaching
-    for this session by mistake in a request handler is a deployment-visible
+    Outcome scoring and artifact purging. User erasure and inspection use the
+    user-scoped ``sonder_erase`` role instead. This session runs as a separate
+    database role which in production is the only one with BYPASSRLS -- so
+    reaching for it by mistake in a request handler is a deployment-visible
     privilege, not a silent one.
 
     Callers are responsible for their own ownership checks: RLS is not

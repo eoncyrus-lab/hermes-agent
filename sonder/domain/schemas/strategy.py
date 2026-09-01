@@ -66,11 +66,10 @@ class CriticScores(Frozen):
         default=0.0,
         ge=0,
         le=1,
-        description="Does this text reference an entity, callback or phrase "
-        "that only exists in ANOTHER relationship's memory? Scored by exact "
-        "match against other dyads' memory chunks, not by model judgement -- "
-        "a leak here can end two relationships at once, so it is checked "
-        "mechanically and gates hard.",
+        description="Compatibility sentinel. Production sets this to 0 when "
+        "cross-dyad comparison is unavailable; zero must not be interpreted "
+        "as 'compared and clean'. A non-zero score is only produced when an "
+        "explicit, safely authenticated phrase set is supplied.",
     )
 
     @property

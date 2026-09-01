@@ -167,6 +167,8 @@ class RelationshipRow(Base):
     started_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
     archived_at: Mapped[datetime | None] = _ts(nullable=True)
 
+    __table_args__ = (UniqueConstraint("id", "user_id"),)
+
 
 class InteractionRow(Base):
     __tablename__ = "interactions"
@@ -480,6 +482,31 @@ class ConsentRecordRow(Base):
         CheckConstraint(
             "status = 'unknown' OR verbatim_ref IS NOT NULL",
             name="known_consent_cites_statement",
+        ),
+    )
+
+
+class VaultRecordRow(Base):
+    __tablename__ = "vault_records"
+    id: Mapped[UUID] = _pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    relationship_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(Text)
+    ciphertext: Mapped[bytes] = mapped_column()
+    key_version: Mapped[str] = mapped_column(Text)
+    provenance: Mapped[str] = mapped_column(PROVENANCE)
+    created_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["relationship_id", "user_id"],
+            ["relationships.id", "relationships.user_id"],
+            name="vault_records_relationship_same_user",
+            ondelete="CASCADE",
         ),
     )
 

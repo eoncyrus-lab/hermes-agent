@@ -116,6 +116,7 @@ async def test_openai_response_refusal_triggers_anthropic_model_failover():
     fallback = HostedFallback()
     router = Router(
         Settings(
+            database_url="postgresql+asyncpg://app:test@db/sonder",
             openai_api_key="test",
             anthropic_api_key="test",
             provider_generate="openai",

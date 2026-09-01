@@ -17,11 +17,21 @@ from sonder.llm.provider import ProviderError
 from sonder.llm.router import Router, UnsafeRouting
 
 VENDORS = ["minimax", "deepseek", "openrouter", "zen"]
+TEST_DATABASE_URL = "postgresql+asyncpg://app:test@db/sonder"
 
 
 def _cfg(**kw) -> Settings:
     kw.setdefault("anthropic_api_key", "test")
+    kw.setdefault("database_url", TEST_DATABASE_URL)
     return Settings(**kw)
+
+
+def test_database_url_is_required_outside_compose(monkeypatch):
+    from pydantic import ValidationError
+
+    monkeypatch.delenv("SONDER_DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError, match="database_url"):
+        Settings()
 
 
 @pytest.mark.parametrize("vendor", VENDORS)
@@ -283,15 +293,36 @@ def test_responses_protocol_fails_fast_until_it_is_implemented():
 def test_a_private_gateway_on_a_trusted_profile_loses_safety_trust():
     """The credential slot never confers trust; only the endpoint does."""
     cfg = Settings(
+        database_url=TEST_DATABASE_URL,
         llm_providers={
             "proxy": {
                 "profile": "anthropic",
                 "api_key": "test",
                 "base_url": "https://proxy.example/v1",
             }
-        }
+        },
     )
     assert Router(cfg).providers["proxy"] is True
+
+
+@pytest.mark.parametrize("profile", ["anthropic", "openai"])
+@pytest.mark.parametrize("task", [Task.EXTRACT, Task.CRITIC])
+def test_named_custom_first_party_profile_cannot_run_safety_work(profile, task):
+    cfg = _cfg(
+        llm_providers={
+            "proxy": {
+                "profile": profile,
+                "api_key": "test",
+                "base_url": f"https://{profile}-proxy.example/v1",
+            }
+        },
+        llm_routes={
+            f"{task.value}.standard": [{"provider": "proxy", "model": "reviewer"}]
+        },
+    )
+
+    with pytest.raises(UnsafeRouting):
+        Router(cfg).resolve(task, Track.STANDARD)
 
 
 def test_openrouter_attribution_headers_are_sent():
@@ -445,7 +476,11 @@ async def test_legacy_failover_between_two_providers_terminates():
             calls.append(self.name)
             raise ContentPolicyRefusal("policy")
 
-    cfg = Settings(anthropic_api_key="test", openai_api_key="test")
+    cfg = Settings(
+        database_url=TEST_DATABASE_URL,
+        anthropic_api_key="test",
+        openai_api_key="test",
+    )
 
     calls: list[str] = []
     r = Router(cfg)
@@ -462,37 +497,31 @@ async def test_legacy_failover_between_two_providers_terminates():
     assert calls == ["anthropic", "openai"]
 
 
-# ------------------------------------------------- the operator's override
-#
-# The default is that no third-party vendor may serve EXTRACT or CRITIC. That
-# default protects against a silent failure, not a loud one, so it is not left
-# to a passing thought -- but it is the operator's system, so there is a way
-# to say "I accept this", and it has to be said by name.
+# -------------------------------------------- safety trust is not configurable
 
 
 @pytest.mark.parametrize("vendor", VENDORS)
 @pytest.mark.parametrize("task", ["extract", "critic"])
-def test_an_operator_can_vouch_for_a_vendor(vendor, task):
+def test_an_operator_cannot_vouch_for_a_vendor(vendor, task):
     cfg = _cfg(
         **{f"{vendor}_api_key": "test"},
         safety_trusted_providers=[vendor],
         llm_routes={f"{task}.standard": [{"provider": vendor, "model": "m"}]},
     )
     router = Router(cfg)
-    route = router.resolve(Task(task), Track.STANDARD)
-    assert route.provider_name == vendor
-    assert route.permissive is False
-    assert vendor in router.vouched
+    assert router.providers[vendor] is True
+    assert router.vouched == frozenset()
+    with pytest.raises(UnsafeRouting, match="cannot be disabled"):
+        router.resolve(Task(task), Track.STANDARD)
 
 
 @pytest.mark.parametrize("vendor", VENDORS)
-def test_vouching_for_one_vendor_does_not_promote_another(vendor):
-    others = [v for v in VENDORS if v != vendor]
+def test_naming_one_vendor_does_not_promote_another(vendor):
     cfg = _cfg(
         **{f"{v}_api_key": "test" for v in VENDORS},
         safety_trusted_providers=[vendor],
         llm_routes={
-            "extract.standard": [{"provider": others[0], "model": "m"}],
+            "extract.standard": [{"provider": vendor, "model": "m"}],
         },
     )
     with pytest.raises(UnsafeRouting):
@@ -510,13 +539,12 @@ def test_the_override_is_off_by_default():
         Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
 
 
-def test_the_guard_names_the_setting_that_lifts_it():
-    """An operator who hits this should not have to go reading the source."""
+def test_the_guard_says_configuration_cannot_disable_it():
     cfg = _cfg(
         openrouter_api_key="test",
         llm_routes={"extract.standard": [{"provider": "openrouter", "model": "m"}]},
     )
-    with pytest.raises(UnsafeRouting, match="SONDER_SAFETY_TRUSTED_PROVIDERS"):
+    with pytest.raises(UnsafeRouting, match="cannot be disabled"):
         Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
 
 
@@ -532,6 +560,7 @@ def test_a_comma_separated_list_is_accepted(monkeypatch):
     import sonder.config as config
 
     monkeypatch.setenv("SONDER_SAFETY_TRUSTED_PROVIDERS", "openrouter, deepseek")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     config.settings.cache_clear()
     try:
         assert config.Settings().safety_trusted_providers == ["openrouter", "deepseek"]
@@ -543,6 +572,7 @@ def test_a_json_list_is_also_accepted(monkeypatch):
     import sonder.config as config
 
     monkeypatch.setenv("SONDER_SAFETY_TRUSTED_PROVIDERS", '["openrouter"]')
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     config.settings.cache_clear()
     try:
         assert config.Settings().safety_trusted_providers == ["openrouter"]
@@ -550,10 +580,10 @@ def test_a_json_list_is_also_accepted(monkeypatch):
         config.settings.cache_clear()
 
 
-def test_a_fully_third_party_deployment_validates_with_the_override():
-    """No Anthropic, no OpenAI, every route on one free-tier vendor."""
+def test_a_fully_third_party_deployment_cannot_override_safety_routes():
     chain = [{"provider": "openrouter", "model": "minimax/minimax-m3:free"}]
     cfg = Settings(
+        database_url=TEST_DATABASE_URL,
         openrouter_api_key="test",
         safety_trusted_providers=["openrouter"],
         llm_routes={
@@ -561,10 +591,39 @@ def test_a_fully_third_party_deployment_validates_with_the_override():
         },
     )
     router = Router(cfg)
-    router.validate_routes()
-    assert router.vouched == frozenset({"openrouter"})
-    for task in Task:
-        assert router.resolve(task).provider_name == "openrouter"
+    with pytest.raises(UnsafeRouting):
+        router.validate_routes()
+    assert router.vouched == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("slot", "base_url"),
+    [
+        ("anthropic", "https://anthropic-proxy.example/v1"),
+        ("openai", "https://openai-proxy.example/v1"),
+    ],
+)
+def test_custom_first_party_compatible_endpoint_cannot_be_promoted(slot, base_url):
+    cfg = _cfg(
+        **{
+            f"{slot}_api_key": "test",
+            f"{slot}_base_url": base_url,
+        },
+        safety_trusted_providers=[slot],
+        llm_routes={"extract.standard": [{"provider": slot, "model": "reviewer"}]},
+    )
+    with pytest.raises(UnsafeRouting):
+        Router(cfg).resolve(Task.EXTRACT)
+
+
+def test_local_endpoint_cannot_be_promoted():
+    cfg = _cfg(
+        local_base_url="http://localhost:8000/v1",
+        safety_trusted_providers=["local"],
+        llm_routes={"critic.standard": [{"provider": "local", "model": "reviewer"}]},
+    )
+    with pytest.raises(UnsafeRouting):
+        Router(cfg).resolve(Task.CRITIC)
 
 
 def test_a_track_override_without_a_provider_is_refused():
@@ -597,7 +656,7 @@ def test_a_track_override_with_a_provider_resolves():
 def test_a_single_first_party_deployment_still_resolves(slot, expected_model):
     """The lenient guess has to survive: without a track override the model
     name is replaced by the provider's own default anyway."""
-    cfg = Settings(**{slot: "test"})
+    cfg = Settings(database_url=TEST_DATABASE_URL, **{slot: "test"})
     router = Router(cfg)
     router.validate_routes()
     assert router.resolve(Task.REASON).model == expected_model

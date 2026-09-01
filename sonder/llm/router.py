@@ -86,10 +86,6 @@ class Router:
         self.cfg = cfg or settings()
         self._providers: dict[str, LLMProvider] = {}
         self._permissive: dict[str, bool] = {}
-        # Providers the operator named in safety_trusted_providers AND that
-        # would otherwise have been permissive -- i.e. the ones where the
-        # restriction was actually lifted, not merely named.
-        self._vouched: set[str] = set()
         self._profiles: dict[str, str] = {}
         self._disabled: dict[str, str] = {}
         self._order: list[str] = []
@@ -228,20 +224,6 @@ class Router:
         return out
 
     def _register(self, name: str, provider: LLMProvider, *, permissive: bool) -> None:
-        # Every registration path funnels through here, so the operator
-        # override is applied once rather than in each of them.
-        if permissive and name in self._operator_trusted:
-            log.warning(
-                "operator_trusted_provider",
-                provider=name,
-                note=(
-                    "extraction and the Critic may now run on a provider whose "
-                    "model safety properties cannot be verified; a model tuned "
-                    "not to refuse is also tuned not to notice"
-                ),
-            )
-            permissive = False
-            self._vouched.add(name)
         if name in self._providers:
             self._order.remove(name)
         self._providers[name] = provider
@@ -249,13 +231,9 @@ class Router:
         self._order.append(name)
 
     @property
-    def _operator_trusted(self) -> frozenset[str]:
-        return frozenset(self.cfg.safety_trusted_providers)
-
-    @property
     def vouched(self) -> frozenset[str]:
-        """Providers serving safety-critical work only because of an override."""
-        return frozenset(self._vouched)
+        """Compatibility view: configuration can no longer grant safety trust."""
+        return frozenset()
 
     @property
     def providers(self) -> dict[str, bool]:
@@ -642,8 +620,7 @@ def _guard(route: Route) -> None:
             "Signal extraction and criticism exist to notice discomfort, "
             "boundaries and pressure; a model trained not to refuse is also "
             "trained not to notice, and the resulting failure is silent. "
-            f"If you accept that risk, name it in "
-            f"SONDER_SAFETY_TRUSTED_PROVIDERS."
+            "This guard cannot be disabled by deployment configuration."
         )
 
 

@@ -36,6 +36,7 @@ from .models import (
     StrategyOutcomeRow,
     StrategyRecordRow,
     UserTacticPriorRow,
+    VaultRecordRow,
 )
 from .scope import Scope, UserScope
 
@@ -51,6 +52,39 @@ def _guard(scope: Scope, *ids: UUID) -> None:
                 f"object belongs to relationship {str(rid)[:8]}, "
                 f"scope is {str(scope.relationship_id)[:8]}"
             )
+
+
+class VaultRepo:
+    """Write encrypted user data only after proving optional dyad ownership."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.s = session
+
+    async def add(
+        self,
+        scope: UserScope,
+        *,
+        relationship_id: UUID | None,
+        kind: str,
+        ciphertext: bytes,
+        key_version: str,
+        provenance: str,
+    ) -> UUID:
+        if relationship_id is not None:
+            relationship = await self.s.get(RelationshipRow, relationship_id)
+            if relationship is None or relationship.user_id != scope.user_id:
+                raise ScopeViolation("vault relationship does not belong to user scope")
+        row = VaultRecordRow(
+            user_id=scope.user_id,
+            relationship_id=relationship_id,
+            kind=kind,
+            ciphertext=ciphertext,
+            key_version=key_version,
+            provenance=provenance,
+        )
+        self.s.add(row)
+        await self.s.flush()
+        return row.id
 
 
 class InteractionRepo:

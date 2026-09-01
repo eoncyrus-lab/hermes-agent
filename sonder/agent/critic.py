@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..domain.schemas.strategy import CriticScores
 from ..llm import Msg, Task, Track, router
@@ -77,7 +77,20 @@ class _ModelScores(BaseModel):
     pressure: float = Field(ge=0, le=1)
     manipulation_risk: float = Field(ge=0, le=1)
     boundary_risk: float = Field(ge=0, le=1)
+    # Truncated, not rejected. This field is advisory, and rejecting the
+    # response over its length threw away the safety assessment with it.
+    # Measured against one free model: 37 of 48
+    # calls failed validation on this field alone, every one of them carrying
+    # scores the Critic needed. A gate that fails because the explanation was
+    # too long is not a gate.
     note: str = Field(max_length=200)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _truncate_note(cls, value):
+        if isinstance(value, str) and len(value) > 200:
+            return value[:197] + "..."
+        return value
 
 
 _SYSTEM = """You score a draft message. You do not rewrite it and you do not approve it.

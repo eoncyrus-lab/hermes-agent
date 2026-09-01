@@ -24,6 +24,7 @@ from sonder.storage.scope import Scope
 
 NOW = datetime.now(UTC)
 RID, UID, PID, IID = uuid4(), uuid4(), uuid4(), uuid4()
+TEST_DATABASE_URL = "postgresql+asyncpg://app:test@db/sonder"
 
 
 def sig(t, mag=0.7, conf=0.8, by=Speaker.TARGET, days=0):
@@ -239,6 +240,49 @@ def test_pressure_is_penalised_not_rewarded():
     assert ranked[0][0] == "calm"
 
 
+@pytest.mark.parametrize(
+    ("length", "suffix"),
+    [(199, ""), (200, ""), (201, "...")],
+)
+def test_critic_note_is_only_truncated_above_200(length, suffix):
+    from sonder.agent.critic import _ModelScores
+
+    scored = _ModelScores(
+        naturalness=0.5,
+        voice_match=0.5,
+        context_match=0.5,
+        strategy_match=0.5,
+        tension=0.5,
+        cringe_risk=0.5,
+        pressure=0.5,
+        manipulation_risk=0.5,
+        boundary_risk=0.5,
+        note="x" * length,
+    )
+    assert len(scored.note) == min(length, 200)
+    assert scored.note.endswith(suffix)
+
+
+def test_critic_note_rejects_non_string_values():
+    from pydantic import ValidationError
+
+    from sonder.agent.critic import _ModelScores
+
+    with pytest.raises(ValidationError, match="note"):
+        _ModelScores(
+            naturalness=0.5,
+            voice_match=0.5,
+            context_match=0.5,
+            strategy_match=0.5,
+            tension=0.5,
+            cringe_risk=0.5,
+            pressure=0.5,
+            manipulation_risk=0.5,
+            boundary_risk=0.5,
+            note=201,
+        )
+
+
 # ---------------------------------------------------------------- learning
 
 
@@ -411,6 +455,22 @@ def test_orm_and_sql_enum_columns_agree():
                 )
 
 
+def test_readme_lists_every_migration_in_order():
+    """Adding a migration must also update the operator upgrade instructions."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    actual = sorted(path.name for path in (root / "migrations").glob("*.sql"))
+    migration_docs = (
+        (root / "README.md")
+        .read_text()
+        .split("### Migration and role installation", 1)[1]
+    )
+    documented = re.findall(r"`(\d{3}_[^`]+\.sql)`", migration_docs)
+    assert documented == actual
+
+
 # ------------------------------------------------------------ track routing
 
 
@@ -479,6 +539,7 @@ async def test_screenshot_job_replay_recomputes_after_post_commit_crash(monkeypa
     from contextlib import asynccontextmanager
     from unittest.mock import AsyncMock
 
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     import sonder.worker.tasks as task_mod
 
     @asynccontextmanager
@@ -519,6 +580,7 @@ def test_safety_critical_tasks_cannot_run_on_a_permissive_provider(monkeypatch):
     from sonder.llm.router import Router, UnsafeRouting
 
     monkeypatch.setenv("SONDER_ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("SONDER_LOCAL_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("SONDER_PROVIDER_EXTRACT", "local")
     config.settings.cache_clear()
@@ -537,6 +599,7 @@ def test_local_declaration_cannot_unlock_safety_work(monkeypatch):
     from sonder.llm.router import Router, UnsafeRouting
 
     monkeypatch.setenv("SONDER_LOCAL_BASE_URL", "http://localhost:8000/v1")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("SONDER_LOCAL_IS_PERMISSIVE", "false")
     monkeypatch.setenv("SONDER_PROVIDER_EXTRACT", "local")
     config.settings.cache_clear()
@@ -553,6 +616,7 @@ def test_custom_compatible_endpoints_fail_closed(monkeypatch, slot):
     from sonder.llm.router import Router, UnsafeRouting
 
     monkeypatch.setenv(f"SONDER_{slot.upper()}_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv(
         f"SONDER_{slot.upper()}_BASE_URL", f"https://custom.example/{slot}"
     )
@@ -577,6 +641,7 @@ def test_explicit_official_endpoints_remain_safety_trusted(monkeypatch, slot, ur
     from sonder.llm.router import Router
 
     monkeypatch.setenv(f"SONDER_{slot.upper()}_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv(f"SONDER_{slot.upper()}_BASE_URL", url)
     monkeypatch.setenv("SONDER_PROVIDER_EXTRACT", slot)
     config.settings.cache_clear()
@@ -591,6 +656,7 @@ async def test_safety_work_rejects_call_level_model_override(monkeypatch):
     from sonder.llm.router import Router, UnsafeRouting
 
     monkeypatch.setenv("SONDER_ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     config.settings.cache_clear()
     r = Router()
 
@@ -605,6 +671,7 @@ def test_intimate_track_routes_only_generation(monkeypatch):
     from sonder.llm.router import Router
 
     monkeypatch.setenv("SONDER_ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("SONDER_LOCAL_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("SONDER_PROVIDER_GENERATE_INTIMATE", "local")
     monkeypatch.setenv("SONDER_MODEL_GENERATE_INTIMATE", "hermes-4-70b")
@@ -625,6 +692,7 @@ def test_intimate_reason_has_a_real_override(monkeypatch):
     from sonder.llm.router import Router
 
     monkeypatch.setenv("SONDER_ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("SONDER_LOCAL_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("SONDER_PROVIDER_REASON_INTIMATE", "local")
     monkeypatch.setenv("SONDER_MODEL_REASON_INTIMATE", "hermes-4-70b")
@@ -642,6 +710,7 @@ def test_policy_failover_will_not_route_around_the_guard(monkeypatch):
     from sonder.llm.router import Route, Router
 
     monkeypatch.setenv("SONDER_ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("SONDER_LOCAL_BASE_URL", "http://localhost:8000/v1")
     config.settings.cache_clear()
 
@@ -677,6 +746,7 @@ async def test_policy_failover_uses_provider_specific_model(
             return Completion("ok", kw["model"])
 
     cfg = Settings(
+        database_url=TEST_DATABASE_URL,
         anthropic_api_key="test",
         openai_api_key="test",
         provider_generate=primary,
@@ -715,6 +785,7 @@ async def test_intimate_local_refusal_falls_back_to_hosted_model():
             return Completion("ok", kw["model"])
 
     cfg = Settings(
+        database_url=TEST_DATABASE_URL,
         anthropic_api_key="test",
         local_base_url="http://localhost:8000/v1",
         provider_generate_intimate="local",
@@ -733,10 +804,11 @@ async def test_intimate_local_refusal_falls_back_to_hosted_model():
     assert hosted.calls == ["hosted-generate"]
 
 
-def test_intimacy_skill_states_the_no_inference_rule():
+def test_intimacy_skill_states_the_no_inference_rule(monkeypatch):
     """The skill is the prompt on this track, so the rule has to be in it."""
     from sonder.agent import skills
 
+    monkeypatch.setenv("SONDER_DATABASE_URL", TEST_DATABASE_URL)
     skills.registry.cache_clear()
     body = skills.registry()["intimacy"].body
     # structural, not phrasing: these sections must exist on this track

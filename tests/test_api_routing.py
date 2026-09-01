@@ -78,6 +78,7 @@ async def test_ask_endpoint_strips_prefix_and_passes_track(monkeypatch):
 @pytest.mark.asyncio
 async def test_intimate_request_keeps_safety_tasks_on_standard_track(monkeypatch):
     """Spy at the router boundary while exercising the real orchestration chain."""
+    monkeypatch.setenv("SONDER_DATABASE_URL", "postgresql+asyncpg://app:test@db/sonder")
     from sonder.agent import critic, generator, humanizer, orchestrator
     from sonder.agent.context import AgentContext
     from sonder.analyzer import signals

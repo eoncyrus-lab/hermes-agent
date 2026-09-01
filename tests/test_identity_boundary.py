@@ -724,6 +724,223 @@ async def test_a_conflict_that_is_not_the_fingerprint_is_reported_where_it_happe
 # ------------------------------------------------------------------ the vault
 
 
+async def test_vault_relationship_must_belong_to_its_user(db):
+    from sqlalchemy.exc import IntegrityError
+
+    from sonder.storage.db import maintenance_session
+    from sonder.storage.repositories import ScopeViolation, VaultRepo
+    from sonder.storage.scope import UserScope
+
+    owner, other = uuid4(), uuid4()
+    owner_relationship, other_relationship = uuid4(), uuid4()
+    async with maintenance_session() as s:
+        await _seed(s, owner, uuid4(), owner_relationship, "Owner")
+        await _seed(s, other, uuid4(), other_relationship, "Other")
+
+    async with maintenance_session() as s:
+        vault_id = await VaultRepo(s).add(
+            UserScope(owner),
+            relationship_id=owner_relationship,
+            kind="statement",
+            ciphertext=b"encrypted",
+            key_version="v1",
+            provenance="user_stated",
+        )
+        assert vault_id is not None
+
+    with pytest.raises(ScopeViolation, match="does not belong"):
+        async with maintenance_session() as s:
+            await VaultRepo(s).add(
+                UserScope(owner),
+                relationship_id=other_relationship,
+                kind="statement",
+                ciphertext=b"encrypted",
+                key_version="v1",
+                provenance="user_stated",
+            )
+
+    with pytest.raises(IntegrityError):
+        async with maintenance_session() as s:
+            await s.execute(
+                text(
+                    "INSERT INTO vault_records "
+                    "(user_id,relationship_id,kind,ciphertext,key_version,provenance) "
+                    "VALUES (:u,:r,'statement',:c,'v1','user_stated')"
+                ),
+                {"u": owner, "r": other_relationship, "c": b"encrypted"},
+            )
+
+
+async def test_integrity_and_vault_migrations_are_rerunnable_without_duplicates(
+    db, superuser
+):
+    from pathlib import Path
+
+    from sonder.storage.db import maintenance_session
+
+    migrations = Path(__file__).parents[1] / "migrations"
+    for name in (
+        "004_integrity_and_idempotency.sql",
+        "006_vault_ownership_and_cleanup.sql",
+        "004_integrity_and_idempotency.sql",
+        "006_vault_ownership_and_cleanup.sql",
+    ):
+        await superuser((migrations / name).read_text())
+
+    async with maintenance_session() as s:
+        duplicates = (
+            await s.execute(
+                text(
+                    "SELECT tgrelid::regclass::text, count(*) "
+                    "FROM pg_trigger "
+                    "WHERE NOT tgisinternal "
+                    "AND tgname LIKE '%\\_scoped\\_references%' ESCAPE '\\' "
+                    "GROUP BY tgrelid HAVING count(*) > 1"
+                )
+            )
+        ).all()
+        duplicate_constraints = (
+            (
+                await s.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conname LIKE '%\\_upgrade' ESCAPE '\\' "
+                        "OR conname LIKE '%\\_integrity' ESCAPE '\\'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert duplicates == []
+    assert duplicate_constraints == []
+
+
+async def test_vault_upgrade_fails_closed_on_legacy_cross_owner_rows(db, superuser):
+    from pathlib import Path
+
+    from asyncpg.exceptions import CheckViolationError
+
+    from sonder.storage.db import maintenance_session
+
+    owner, other = uuid4(), uuid4()
+    owner_relationship, other_relationship = uuid4(), uuid4()
+    bad_vault = uuid4()
+    async with maintenance_session() as s:
+        await _seed(s, owner, uuid4(), owner_relationship, "Legacy owner")
+        await _seed(s, other, uuid4(), other_relationship, "Legacy other")
+
+    # Recreate the legacy shape: relationship existence was checked, ownership
+    # was not. This is intentionally separate from the failing migration so
+    # its preflight sees a committed legacy row.
+    await superuser(
+        "ALTER TABLE vault_records DROP CONSTRAINT "
+        "vault_records_relationship_same_user; "
+        "ALTER TABLE vault_records ADD CONSTRAINT "
+        "vault_records_relationship_id_fkey FOREIGN KEY (relationship_id) "
+        "REFERENCES relationships(id) ON DELETE CASCADE; "
+        "INSERT INTO vault_records "
+        "(id,user_id,relationship_id,kind,ciphertext,key_version,provenance) "
+        f"VALUES ('{bad_vault}','{owner}','{other_relationship}',"
+        "'statement','\\x00','v1','user_stated');"
+    )
+
+    migration = (
+        Path(__file__).parents[1] / "migrations" / "006_vault_ownership_and_cleanup.sql"
+    ).read_text()
+    with pytest.raises(CheckViolationError, match="vault ownership preflight"):
+        await superuser(migration)
+
+    # Restore the upgraded shape so this regression test is isolated from the
+    # remainder of the real-Postgres suite.
+    await superuser(f"DELETE FROM vault_records WHERE id = '{bad_vault}';")
+    await superuser(migration)
+
+
+async def test_role_script_rotates_quoted_passwords_and_the_roles_can_log_in(db):
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    from sqlalchemy.engine import make_url
+
+    superuser_url = os.environ.get("SONDER_SUPERUSER_DATABASE_URL")
+    if superuser_url is None or shutil.which("psql") is None:
+        pytest.skip("superuser DSN and host psql are required")
+
+    role_variables = {
+        "sonder_app": ("SONDER_APP_DB_PASSWORD", "SONDER_TEST_APP_DB_PASSWORD"),
+        "sonder_identity": (
+            "SONDER_IDENTITY_DB_PASSWORD",
+            "SONDER_TEST_IDENTITY_DB_PASSWORD",
+        ),
+        "sonder_erase": (
+            "SONDER_ERASURE_DB_PASSWORD",
+            "SONDER_TEST_ERASURE_DB_PASSWORD",
+        ),
+        "sonder_worker": (
+            "SONDER_WORKER_DB_PASSWORD",
+            "SONDER_TEST_WORKER_DB_PASSWORD",
+        ),
+        "sonder_maint": (
+            "SONDER_MAINT_DB_PASSWORD",
+            "SONDER_TEST_MAINT_DB_PASSWORD",
+        ),
+        "sonder_bot": ("SONDER_BOT_DB_PASSWORD", "SONDER_TEST_BOT_DB_PASSWORD"),
+    }
+    original = {
+        script_var: os.environ[test_var]
+        for script_var, test_var in role_variables.values()
+    }
+    rotated = {
+        script_var: f"quote'!@#$%^&*()[]{{}}:;,.?/{index}"
+        for index, (script_var, _) in enumerate(role_variables.values())
+    }
+    url = make_url(superuser_url)
+    connection_env = {
+        "PGHOST": url.host or "127.0.0.1",
+        "PGPORT": str(url.port or 5432),
+        "PGDATABASE": url.database or "postgres",
+        "PGUSER": url.username or "postgres",
+        "PGPASSWORD": url.password or "",
+    }
+    script = Path(__file__).parents[1] / "scripts" / "db-roles.sh"
+
+    def run_script(passwords):
+        subprocess.run(
+            [str(script)],
+            env={**os.environ, **connection_env, **passwords},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    try:
+        run_script(rotated)
+        for role, (script_var, _) in role_variables.items():
+            result = subprocess.run(
+                [
+                    "psql",
+                    "--no-psqlrc",
+                    "--quiet",
+                    "--tuples-only",
+                    "--command=SELECT current_user",
+                ],
+                env={
+                    **os.environ,
+                    **connection_env,
+                    "PGUSER": role,
+                    "PGPASSWORD": rotated[script_var],
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            assert result.stdout.strip() == role
+    finally:
+        run_script(original)
+
+
 async def test_the_request_role_cannot_reach_the_vault_at_all(db, register):
     """The vault is the most sensitive table here, and the answer is blunt.
 

@@ -316,13 +316,16 @@ CREATE TABLE strategy_outcomes (
 CREATE TABLE vault_records (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  relationship_id uuid REFERENCES relationships(id) ON DELETE CASCADE,
+  relationship_id uuid,
   kind            text NOT NULL,
   ciphertext      bytea NOT NULL,
   key_version     text NOT NULL,
   provenance      provenance NOT NULL
                     CHECK (provenance IN ('user_stated','target_stated')),
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT vault_records_relationship_same_user
+    FOREIGN KEY (relationship_id, user_id)
+    REFERENCES relationships(id, user_id) ON DELETE CASCADE
 );
 
 CREATE TABLE consent_records (

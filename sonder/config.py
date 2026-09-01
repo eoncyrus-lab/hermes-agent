@@ -19,7 +19,9 @@ class Settings(BaseSettings):
         env_file=".env", env_prefix="SONDER_", extra="ignore"
     )
 
-    database_url: str = "postgresql+asyncpg://sonder:sonder@localhost:5432/sonder"
+    # Required even for non-Compose deployments. A baked-in owner credential
+    # silently bypasses the role split and RLS assumptions below.
+    database_url: str
     # Separate role for the few operations that legitimately span
     # relationships: outcome scoring and artifact purging. This is the ONLY
     # role with BYPASSRLS, so a bug in a request handler cannot read across
@@ -70,21 +72,10 @@ class Settings(BaseSettings):
     # Data-driven provider registry and ordered task.track route chains. These
     # are JSON objects in environment variables. Legacy provider/model fields
     # below are translated when a route is not present here.
-    # Providers the OPERATOR vouches for on safety-critical work, by name.
-    #
-    # EXTRACT and CRITIC are otherwise restricted to first-party endpoints,
-    # because a reseller or aggregator does not even guarantee which weights
-    # served a request. That default is deliberate and it is not free to
-    # override: those two tasks exist to notice discomfort, boundaries and
-    # pressure, and a model tuned not to refuse is also tuned not to notice.
-    # The failure is silent -- boundary_risk comes back low for everything and
-    # the Critic starts passing what it should block.
-    #
-    # It is still the operator's system and the operator's risk, so this
-    # exists. It has to be named explicitly, it is logged at WARNING on every
-    # startup, and `sonder llm validate` prints those providers as
-    # `operator-trusted` rather than `safety-trusted`. Accepts a JSON list or
-    # a comma-separated string.
+    # Deprecated input retained so old environments still parse. It cannot
+    # promote any provider: safety trust is code-owned, never operator-owned.
+    # In particular, local endpoints, protocol-compatible proxies and vendor
+    # profiles remain barred from EXTRACT and CRITIC.
     safety_trusted_providers: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     llm_providers: dict[str, ProviderConfig] = Field(default_factory=dict)
@@ -144,7 +135,7 @@ class Settings(BaseSettings):
     @field_validator("safety_trusted_providers", mode="before")
     @classmethod
     def _split_provider_names(cls, value):
-        """Accept `a,b` as well as `["a","b"]`.
+        """Parse the deprecated setting without granting it any authority.
 
         `NoDecode` is what makes this reachable: without it pydantic-settings
         JSON-decodes the raw value before any validator runs, so a plain
