@@ -1,610 +1,154 @@
-# Sonder
+# 情圣 / romance-master
 
-*sonder* — the realisation that each passer-by has a life as vivid and complex
-as your own.
+一个**基于证据**的情感顾问。它读你给它的材料，为每个人维护一份有出处的档案，
+判断现在是什么局，给出下一步——并且从实际发生的事里学习。
 
-A personal relationship intelligence agent. It reads conversations you show
-it, maintains an evidence-backed model of one relationship at a time, suggests
-things you might say in your own voice, and learns from what actually happened
-afterwards.
+它不是一个 PUA 工具箱。区别不在语气，在**规矩**：那种工具需要做的事——从一个人
+的性格推断她想要什么、给出证据撑不起的把握、在对方不适时继续优化「进展」、把在
+一个人身上奏效的套路搬到另一个人身上——在这里会被**拒绝执行**。拒绝它的是一个
+程序，不是一段提示词。
 
-It is not a pickup tool. The difference is architectural, not tonal: the
-things such a tool would need to do — infer what someone wants from what they
-are like, assert confidence it has not earned, optimise engagement past
-someone's discomfort, carry what worked on one person over to another — are
-rejected by the schema layer, not discouraged by the prompt.
+---
 
-## What is here
+## 它现在是什么形态
 
-```
-sonder/domain/schemas/   the five locked schemas + their invariants
-sonder/llm/              provider abstraction: Anthropic, any OpenAI-compatible
-sonder/storage/          scoped sessions, repositories, SQLAlchemy mapping
-sonder/analyzer/         screenshot -> messages -> features -> signals
-sonder/state/            signals -> RelationshipState; trends; preferences
-sonder/agent/            skills, context, strategy, generator, humanizer, critic
-sonder/learning/         outcome scoring, calibration, cross-person priors
-sonder/api|bot|worker/   FastAPI, Telegram, arq pipeline
-skills/                  eight domain skills (knowledge, never people)
-migrations/              ordered SQL upgrades (currently 001 through 006)
-evals/                   calibration, leakage and hallucination suites
-tests/                   invariant, calibration, integration and isolation tests
-```
+这个仓库**曾经**是一个完整的后端：Python + FastAPI + arq worker + Telegram bot +
+微信通道，Postgres 16 + pgvector，7 个数据库角色，行级安全，8 个迁移，339 个单元
+测试和一套评测。
 
-## The invariants
+现在它是**一个 skill 加一个 agent**，没有服务、没有数据库、没有依赖。规矩没有变，
+执行规矩的地方变了——这个取舍下面单独讲，因为它是这个项目最需要被看清的地方。
 
-Enforced by pydantic validators AND Postgres constraints, so neither layer is
-the only thing standing between a user and a bad claim.
-
-1. **No inference without evidence.** A model-inferred `Assessment` with zero
-   evidence refs will not construct.
-2. **Confidence is capped by evidence count.** One observation supports at
-   most 0.45. Eight consistent ones support 0.85. Evidence identity is
-   `(kind, ref_id)`: copied rows cannot inflate the count, and the ceiling
-   table carries an explicit policy version for later calibration.
-3. **Repeated beliefs are Beta posteriors with a visible n.** Below n=3 the
-   only permitted output is `unknown`.
-4. **Protected namespaces cannot be inferred.** `sexual.*`, `kink.*`,
-   `body.*`, `health.*`, `consent.*` accept only explicit statements. "She is
-   assertive at work" has no path to a claim about what she wants in bed.
-5. **Consent has no probabilistic state.** `confirmed | declined |
-   hard_limit | unknown`. Attraction lives in a different object entirely.
-6. **Prediction is written before outcome, and frozen.** Otherwise the
-   calibration numbers are decoration.
-7. **A discomfort signal outranks every engagement metric.** However fast she
-   replied.
-8. **Relationships are isolated.** Three independent layers, below.
-
-## Isolation
-
-Every table is either user-scoped or dyad-scoped; nothing is both.
-
-| Scope | Contents | Rule |
-|---|---|---|
-| user | self profile, voice, tactic priors | shared on purpose |
-| dyad | target profile, state, interactions, signals, preferences, strategies, memory, consent | hard isolated |
-| global | skills | shared, contains no person data |
-
-Enforced by two active layers, because the application layer will forget a
-`WHERE` clause exactly once:
-
-1. `relationship_id NOT NULL` on every dyad-scoped table, and a `Scope`
-   object that repositories require as their first argument
-2. Postgres RLS keyed on `app.relationship_id` — verified: a query that
-   drops its filter returns zero rows, and an unscoped session sees nothing
-
-The deterministic `cross_dyad_leak` helper remains dormant for a future
-separately authenticated, user-scoped reader. Production does not fetch other
-relationships' text, and `cross_dyad_leak_risk=0` currently means unavailable,
-not “compared and clean.” The former database oracle was removed rather than
-granting a shared service role cross-dyad text access.
-
-The one sanctioned channel between relationships is `UserTacticPrior`: Beta
-parameters for a tactic key, no person, no text, no context, minimum three
-relationships, never for protected domains, and unable on its own to lift a
-belief out of `unknown`.
-
-## Hot path and slow path
-
-Reply suggestions do **not** run an agent loop. State and preferences are
-precomputed, so the path is generate → humanize → critique → rank, in a few
-seconds, because the user is standing in a chat window.
-
-Analysis, review and strategy do load skills and reason at length, because the
-user asked for a considered answer and twenty seconds is fine.
-
-Conflating the two is what makes assistants either slow or shallow.
-
-## Providers
-
-Call sites name a `Task` and, where it matters, a `Track` — never a model and
-never a vendor. Extraction runs cheap, the Humanizer runs on whatever writes
-best, and a refusal or exhausted provider error follows the configured chain.
-OpenAI-compatible Chat Completions endpoints work; a provider configured for
-the Responses protocol fails fast until that protocol is implemented.
-
-### Credentials a user brings themselves
-
-A deployment's keys serve everyone. A user can also store their own, which is
-what lets somebody use a vendor the operator has no account with — or a model
-they host, which is the only honest answer to a hosted model hedging on frank
-adult conversation.
+引擎那一版完整保留在 git 历史里，最后一个提交是 `f412197`：
 
 ```bash
-sonder credentials set --user <UUID> --provider my-vllm \
-  --profile local --base-url http://127.0.0.1:8000/v1 --model hermes-4-70b --intimate
-sonder credentials list --user <UUID>     # never prints a key
-sonder credentials clear --user <UUID> --provider my-vllm
+git show f412197 --stat
+git checkout f412197 -- .        # 想全部拿回来的话
 ```
 
-The key is read from the terminal, never from argv, which is in the shell
-history and in `ps`. It is encrypted with `SONDER_VAULT_KEY` before it reaches
-the database, so a dump of the database is not a dump of working API keys.
-
-Two rules hold, and both are enforced in code rather than documented and hoped
-for:
-
-**A user credential is always permissive.** Whatever profile it names, the
-official ones included — their key still points wherever they typed, and the
-operator cannot verify it. So it can never serve `EXTRACT` or `CRITIC`, and a
-route chain that tries is a startup error. Those two tasks are the operator's
-guarantee to the person being modelled; somebody who can choose an endpoint
-can choose one that has been talked out of its refusals, and that failure is
-silent.
-
-**A name the deployment already relies on for a safety task is not
-overridable.** If the operator's `EXTRACT` runs on DeepSeek, a user's DeepSeek
-key is stored and used for their other requests while that route keeps the
-operator's credential. Replacing it would put their endpoint underneath a
-safety route, and `validate_routes` would then fail every request they made.
-
-An `--intimate` credential redirects **reason, generate and humanize** on the
-intimate track to that endpoint, and nothing else. Extraction and criticism do
-not follow the track in either direction, so they cannot be moved by it. The
-first version of this redirected every `*.intimate` route; `router._guard`
-refused it at startup with `UnsafeRouting`, which is the guard catching a real
-mistake rather than a theoretical one.
-
-### Adding a vendor
-
-MiniMax, DeepSeek, OpenRouter and OpenCode Zen can coexist. Each needs its own
-API key; the profile supplies the endpoint and Chat Completions protocol. A
-private gateway or second account is a named `SONDER_LLM_PROVIDERS` entry.
-
-| profile | default endpoint | model note |
-|---|---|---|
-| [MiniMax](https://api.minimax.io/v1) | `https://api.minimax.io/v1` | set a mainland-China base explicitly when required |
-| [DeepSeek](https://api-docs.deepseek.com/) | `https://api.deepseek.com` | examples: `deepseek-v4-flash`, `deepseek-v4-pro` |
-| [OpenRouter](https://openrouter.ai/docs/guides/routing/routers/free-router) | `https://openrouter.ai/api/v1` | `openrouter/free` and `:free` availability changes |
-| [OpenCode Zen](https://dev.opencode.ai/docs/zen/) | `https://opencode.ai/zen/v1` | choose a currently listed chat-compatible free model |
-
-Routes are ordered chains, keyed `"<task>.<track>"`. The first hop this
-deployment has configured serves; a policy refusal moves to the next:
+## 这里有什么
 
 ```
-SONDER_DEEPSEEK_API_KEY=...
-SONDER_OPENROUTER_API_KEY=...
-SONDER_LLM_ROUTES={"generate.standard":[
-  {"provider":"deepseek","model":"deepseek-v4-flash"},
-  {"provider":"openrouter","model":"openrouter/free"}]}
+SKILL.md              agent 读的入口：人设、流程、编排表、硬规矩
+references/           八份方法论（英文），按需加载
+  method.md             第一原则怎么落地——永远第一份读的
+  reasoning.md          从证据推到结论
+  dating-core.md        追求与推进
+  flirting.md           调情与暗示
+  communication.md      怎么说话、怎么接话
+  psychology.md         读人
+  relationship-science.md  关系的长期结构
+  intimacy.md           亲密与边界（先读禁区）
+  philosophy.md         关于他自己的问题
+scripts/record.py     写档案。会**拒绝**违规写入
+scripts/check.py      查档案。会揪出手改出来的错
+targets/<名字>.md      每个人的档案——它的长期记忆（默认位置）
 ```
 
-Two rules the router will not let a deployment bend:
+## 装上
 
-**Every third-party vendor is permissive by default.** An aggregator does not
-guarantee which weights served a request, and a reseller's safety tuning cannot
-be inspected from here. So MiniMax, OpenRouter and Zen may not serve `EXTRACT`
-or `CRITIC` — not as a primary, not as a failover hop. A chain that lists one
-for those tasks is a startup error, not a silently skipped hop.
-
-> **This deployment departs from that default for DeepSeek.** It runs on a
-> DeepSeek key alone, so the two safety-critical tasks have no first-party
-> endpoint to fall back to. Rather than leave them unroutable, DeepSeek is
-> marked safety-trusted in `sonder/llm/configuration.py` — in code, under
-> review, and pinned by `tests/test_provider_registry.py`, not through an
-> operator-settable switch (which is the thing the guard exists to prevent;
-> `SONDER_SAFETY_TRUSTED_PROVIDERS` remains ignored). What that costs is stated
-> at the `PROFILES` entry: the Critic is the last gate before a candidate
-> reaches the user, and a model that declines less also notices less, silently.
-> If a first-party key ever becomes available, restore the flag and route
-> `EXTRACT` and `CRITIC` there.
-
-**Third-party vendors carry no default model.** Free tiers and `:free`
-variants churn, so an inherited default would quietly send `claude-opus-5` to
-DeepSeek, or keep pointing at a model that stopped existing. Name it in a
-chain or the router refuses the route.
-
-Check a deployment before it serves traffic:
+skill 要放在 harness 会扫描的目录下。这个部署扫 `~/.dsh/skills/`：
 
 ```bash
-sonder llm validate                          # resolve and guard every route
-sonder llm smoke provider deepseek --model deepseek-v4-flash
-sonder llm smoke route generate --track standard
+ln -sfn /path/to/this/repo ~/.dsh/skills/romance-master
 ```
 
-`validate` resolves all twelve task × track routes, reports enabled and
-disabled providers, prints trust and failover order, and exits non-zero on an
-unsafe or incoherent configuration. Provider smoke calls one named endpoint;
-route smoke exercises normal resolution and ordered fallback. Neither assumes
-every vendor implements `/models`.
+符号链接可以，而且改完不用重启——发现层会实时看到。
 
-### The intimate track
+`romance-master` 这个 agent preset 已经装在这个部署里（`~/.dsh/.agent-presets/romance-master/`），
+在 GUI 的 preset 选择器里叫「情圣」。它是从 `standard` 复制后逐行删出来的：留下 shell、
+文件工具、skill 加载器、提问工具和压缩；删掉子代理、工作流、计划模式、待办、后台任务
+和网页检索。
 
-A general-purpose hosted model hedges or declines on frank discussion of sex
-between consenting adults, which makes it unusable for that part of the
-product. `Track.INTIMATE` routes **generation and rewriting** to a model the
-operator hosts themselves.
-
-> **This deployment does not do that yet.** `SONDER_LOCAL_BASE_URL` is unset
-> and every `*.intimate` route in `.env` points at DeepSeek, so the intimate
-> track currently has the exact failure mode this section describes — the
-> hosted model may hedge or decline. The routing *machinery* is intact and the
-> guard below still holds; only the self-hosted endpoint is missing. Point
-> `reason.intimate` / `generate.intimate` / `humanize.intimate` at a vLLM or
-> Ollama endpoint to get the intended behaviour.
-
-Signal extraction and the Critic never follow the track, in either direction,
-and `Router.resolve` raises `UnsafeRouting` rather than allowing it — failover
-included. The reason is specific: those tasks exist to notice discomfort,
-boundaries and pressure, and a model tuned away from refusing is also tuned
-away from noticing. A compliant model scoring `boundary_risk` returns low
-numbers for everything, the Critic starts passing candidates it should block,
-and nothing in the output looks wrong.
-
-The track is a routing hint and relaxes no domain rule. Protected preference
-namespaces still cannot be inferred, consent still has no probabilistic state,
-and every candidate still passes the Critic.
-
-Use a leading `/intimate` to select this track explicitly when a request does
-not contain an obvious classifier keyword. The prefix is stripped before the
-request reaches a model. Local and custom provider endpoints are permanently
-untrusted for safety-critical routing; configuration cannot promote one.
-Verify a configured vLLM/Ollama-compatible endpoint with
-`sonder llm smoke-local`, which checks both `/models` and a real chat
-completion.
-
-### Calibration is offline and advisory
-
-`CalibrationObservationV1` joins a frozen prediction to its later outcome and
-records the bucket, model version and confidence-policy version. The offline
-report groups on all three, reports sample count, Brier score, bias, intervals
-and excluded-data counts. Empty groups, synthetic observations, indeterminate
-outcomes and groups below the real-sample floor are labelled
-`INSUFFICIENT_REAL_DATA`; they cannot produce metrics.
-
-Recommendations are limited to `hold`, `tighten`, or
-`eligible_for_manual_review`. The reporter is a pure, read-only module and has
-no path to runtime settings, so it never changes a ceiling automatically.
-
-## Running it
+档案默认写在 `targets/`。要把它挪出 skill 目录（私人数据不该和可以被分享的技能代码
+混在一起），设 `ROMANCE_TARGETS`：
 
 ```bash
-cp .env.example .env
-# Generate POSTGRES_PASSWORD, the seven service-role passwords, and the Redis
-# password separately: openssl rand -hex 32
-# Then set at least one provider API key and every other required secret.
-docker compose up -d db redis
-docker compose up api worker
-docker compose --profile bot up bot
-
-# locally
-python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-# Required outside Compose; there is no baked-in database owner credential.
-export SONDER_DATABASE_URL=postgresql+asyncpg://sonder_app:...@localhost/sonder
-./scripts/check.sh
+export ROMANCE_TARGETS=~/.dsh/romance-master/targets
 ```
 
-### Running without building the application images
+## 用
 
-The three application images are not needed to run the stack. Docker can own
-PostgreSQL alone, with the Python processes on the host:
+在会话里正常说话就行——「她昨天这么回我，我该怎么接」。agent 会加载 skill 并按里面的
+流程走。也可以直接敲脚本：
 
 ```bash
-docker compose up -d db          # fresh volume: 001..006 run in order
-docker compose up db-roles       # assigns the six role passwords from .env
-# redis is the Homebrew service on 127.0.0.1:6379, which has no password
+cd ~/.dsh/skills/romance-master
 
-./scripts/run-local.sh api       # uvicorn on 127.0.0.1:8000
-./scripts/run-local.sh worker    # arq: ingest, analysis, the two cron jobs
-./scripts/run-local.sh bot       # Telegram long polling
-./scripts/run-local.sh cli llm validate
+python3 scripts/record.py new 小美                     # 建档，带保留期
+python3 scripts/record.py evidence 小美 --source 原文 --text "她主动问我周末有没有空"
+python3 scripts/record.py claim 小美 \
+    --axis attraction.romantic --value 0.6 --evidence e1,e2
+python3 scripts/record.py show 小美                    # 手上到底有什么
+python3 scripts/check.py                               # 交付前自检
 ```
 
-`docker-compose.override.yml` publishes the database on `127.0.0.1:5432` and
-nothing else; delete that file to return to the containerised deployment. The
-override exists because the base file deliberately does not publish a port —
-"a published 5432 on a laptop is a published 5432 on whatever network that
-laptop joins next" — and `docker-compose.test.yml` already publishes its test
-database the same way. `scripts/run-local.sh` assembles the five DSNs from
-`.env` because the six roles are not interchangeable: the API must never hold
-the maintenance DSN, and the bot must hold `sonder_bot` rather than
-`sonder_identity`.
+只看标准库，`python3` 3.8+ 就行——没有虚拟环境，没有 pip。
 
-PostgreSQL still has to be the container. The schema needs pgvector and the
-six RLS roles that only `migrations/001..006` create, and a host PostgreSQL 14
-has neither.
+## 方法
 
-### The browser page
+八条规矩，写在 `references/method.md`：
 
-`GET /ui` serves a single-file chat page: pick a relationship, type, or attach
-screenshots. It runs the same `orchestrator.handle` the bot does, through the
-same ownership check and the same policies, so it reaches nothing the Telegram
-bot could not. `POST /chat` exists for it because the API had split `handle`
-into `/reply` and `/ask`, which forced a browser to guess the intent before the
-classifier ran.
+1. **没有证据就没有结论。** 一条结论必须引用真实存在的证据 id。
+2. **置信度由证据条数封顶。** 1 条最多 0.45，2 条 0.60，3 条 0.70，6 条以上 0.85。
+3. **重复不算新证据。** 同一句话记两遍仍然是一条观察。
+4. **禁区不可推断。** `sexual.` `kink.` `body.` `health.` `consent.` 只能来自明确陈述。
+5. **同意是个枚举，不是感觉。** `同意` / `拒绝` / `硬边界` / `未知`。沉默不是同意，
+   以前同意过也不是同意。
+6. **预测先冻结，事后不改。** 否则「我早说过了」永远成立。
+7. **不舒服压过一切。** 不管对方回复得多快。
+8. **人和人之间隔离。** 一个人一份档案，混了会被 `check.py` 揪出来。
 
-The page authenticates with a bearer token, and it does not have to be typed
-in. Setting `SONDER_UI_TOKEN` makes `/ui` inject that token into the document
-— but only when **both** the `Host` header names a loopback host **and** the
-peer address is loopback.
+这些不是建议——`record.py` 会拒绝违反它们的写法：
 
-The feature is shaped by a constraint worth knowing before changing it: the API
-**cannot mint** a token. `api_tokens` is granted to `sonder_maint` alone and
-the API is deliberately not given that DSN, while `sonder_identity` holds one
-verification function and no issuance function. So "auto-login" can only mean
-handing over a token an operator provisioned. Minting one per request would
-also litter the table with live credentials.
+```
+$ python3 scripts/record.py claim 小美 --axis attraction.romantic --value 0.8 --evidence e1
+拒绝：0.80 超过了 1 条观察撑得起的上限（上限 0.45）。要么把值降下来，要么再拿证据来。
 
-Two checks guard the injection, and both are load-bearing. The client address
-alone is not enough: a page on `evil.example` can point that name at 127.0.0.1
-and make its fetches same-origin, and the request then genuinely arrives from
-127.0.0.1 — only the `Host` header still says `evil.example`. The `Host` check
-alone is not enough either, because a request proxied in from elsewhere can
-forge it. `tests/test_ui_autologin.py` pins both.
-
-What it does not defend against, stated plainly: **any local process that can
-reach 127.0.0.1:8000 gets a working token for the configured account.** On a
-single-user machine such a process can already read `.env` and the database,
-so the token is not the weakest link — but that is a statement about a personal
-machine, not one that would hold on a shared host. Clearing the setting
-restores the typed-token behaviour and leaves the page otherwise unchanged.
-
-
-Migrations run from `/docker-entrypoint-initdb.d` and therefore only execute
-on an **empty** data directory. An existing volume keeps whatever schema it
-was initialised with — `docker compose down -v` is what forces a clean
-`001..006` pass, and `scripts/backup.sh` is what makes that safe to do.
-
-Nothing in the tree is a credential. The migrations create every service role
-without a password — which under md5/scram means the role cannot authenticate
-at all — and `scripts/db-roles.sh` sets them from the environment on each
-`up`, which is also the rotation path. Compose refuses to start if one is
-unset rather than falling back to a default. Postgres and Redis publish no
-host port; the API publishes only on loopback.
-
-Use `openssl rand -hex 32` independently for every password embedded in a DSN.
-Hex avoids URL delimiter characters. If an externally managed password uses
-characters such as `:/@?#[]`, percent-encode the password component before
-embedding it. Required Compose secrets are `POSTGRES_PASSWORD`, all seven
-`SONDER_*_DB_PASSWORD` values, and `SONDER_REDIS_PASSWORD`; provider and vault
-credentials are required when their corresponding features are enabled.
-
-## Database identities
-
-Seven roles, and the split is the design:
-
-| role | reach | held by | BYPASSRLS |
-|---|---|---|---|
-| `sonder_identity` | one bearer-token RPC. No table privileges at all. | api | no |
-| `sonder_bot` | one Telegram RPC. No table privileges at all. | bot | no |
-| `sonder_wechat` | one WeChat RPC. No table privileges at all. | wechat | no |
-| `sonder_app` | one relationship, of one verified user | api, bot, wechat | no |
-| `sonder_erase` | every relationship of one verified user | api | no |
-| `sonder_worker` | one pinned relationship, no user identity | worker | no |
-| `sonder_maint` | everything. Two scheduled jobs. | worker | **yes** |
-
-`sonder_bot` exists separately from `sonder_identity` because the two RPCs are
-not equally hard to guess. `auth_bearer` needs a 256-bit token digest;
-`auth_telegram` takes a ten-digit Telegram user id, often a public one — so
-whatever can call it can walk the id space and trade a hit for a working
-claim. Only the bot has a reason to, and only the bot gets it.
-
-`sonder_wechat` is separate from `sonder_bot` for the same reason applied one
-step further: a WeChat id is an opaque `…@im.wechat` handle rather than a
-guessable integer, but the two RPCs still differ in how much damage a holder
-can do, and a process should carry the narrowest credential that does its job.
-A compromised WeChat bridge must not also mint Telegram claims. That is tested
-rather than asserted: `tests/test_identity_boundary.py` connects as
-`sonder_wechat` and checks it can execute `auth_wechat`, cannot execute
-`auth_telegram`, and cannot read `wechat_accounts`.
-
-The load-bearing part is what a session has to prove. `app.user_id` is a
-claim, not a credential: the policies resolve the current user through
-`app_current_user_id()`, which returns a row only when the session also
-carries `app.identity_claim` — the digest of a live, unrevoked bearer token
-for that same user. A handler that sets `app.user_id` to someone else's id
-gets zero rows, and no service role can read the token table to forge one.
-
-The dyad policies ask the same question. Pinning `app.relationship_id` used to
-be sufficient on its own, so knowing an id was enough to read it; the policy
-now also requires that relationship to belong to the verified user.
-
-A queued job is the one path with no bearer token to present, so
-`sonder_worker`'s policies can only enforce the pinned relationship. The other
-half — that the job's user id actually owns it — is checked in
-`worker.tasks.authorize`, which raises rather than proceeding.
-
-None of these DSNs falls back to another: a missing one is a startup error,
-not a quiet demotion to the app role. That matters because the demotion is
-invisible — the worker would build preference models with empty
-cross-relationship priors, outcome scoring would see no relationships, and
-erasure would report every count as zero while the cascade removed the data.
-
-`sonder token create|list|revoke` reads and writes `api_tokens`, which only
-`sonder_maint` may touch, so the operator CLI needs
-`SONDER_MAINTENANCE_DATABASE_URL` set. It is an operator tool, not a service.
-
-One residual worth knowing: the claim is the token digest, and it travels
-through `app.identity_claim` on every session. A Postgres configured to log
-statements or parameters will therefore write replayable claims to its logs,
-so don't enable `log_statement = 'all'` against this database.
-
-The check entrypoint runs lint, formatting, unit tests, evals, then starts a
-temporary `pgvector/pgvector:pg16` database and runs the real Postgres tests.
-Those verify the installed extension version, `vector(1536)` schema and cosine
-index, 1536-dimensional writes and search order, wrong-dimension rejection,
-and cross-relationship isolation. Missing Docker or an unavailable daemon is
-an explicit failure, never a green skipped run. CI calls the same script.
-
-### Migration and role installation
-
-Apply migrations as an administrative migration identity, in numeric order:
-
-1. `001_core.sql` creates the schema, base constraints, RLS and service roles
-   without login passwords.
-2. `002_security_boundaries.sql` tightens ownership constraints and removes
-   the unsafe cross-dyad text oracle.
-3. `003_identity_and_idempotency.sql` installs verified identity RPCs,
-   least-privilege role grants and replay-safe ingest primitives.
-4. `004_integrity_and_idempotency.sql` adds the remaining composite ownership
-   references and idempotency constraints after fail-closed preflight checks.
-5. `005_vault_scope_and_version_keys.sql` scopes vault records and strengthens
-   version-chain ownership keys after fail-closed preflight checks.
-6. `006_vault_ownership_and_cleanup.sql` binds relationship-scoped vault rows
-   to the same owning user and removes superseded integrity objects.
-7. `007_wechat_channel.sql` adds the WeChat identity mapping, its
-   `auth_wechat` RPC and the `sonder_wechat` role, after a superuser check.
-8. `008_user_llm_credentials.sql` adds per-user model credentials: encrypted
-   at rest, row-secured like the vault, and deliberately unreachable by the
-   worker so extraction cannot follow a user's endpoint.
-
-Do not run the application as the table owner or a superuser: either silently
-defeats RLS. After migrations, `scripts/db-roles.sh` assigns independently
-generated passwords to the seven service identities. Existing installations
-must apply all eight files in order before switching application code or DSNs;
-preflight failures require repairing the reported inconsistent rows before
-retrying. Application, identity, worker and maintenance service roles are not
-migration identities.
-
-**Apply them in order, and do not replay an early one on its own.** A later
-file extends something an earlier one owns: `app_current_user_id()` learns the
-`w` claim kind in 007, while 003 still contains the two-kind version — so
-replaying 003 against a live database silently disables WeChat authentication.
-Every `w` claim then resolves to no user and reads zero rows, with no error
-raised anywhere. Since `004`..`007` are each idempotent, the repair is to
-re-apply them in order. `tests/test_identity_boundary.py` does exactly that
-after the one test that rewinds the history on purpose, which is how the
-hazard was found rather than guessed at.
-
-Cross-relationship text comparison in the leak critic is disabled. A shared
-application role plus caller-set relationship scope cannot safely authenticate
-tenant ownership for a cross-dyad text reader. The critic degrades to its other
-boundary checks instead; there is no cross-dyad reader role, DSN, or executable
-`SECURITY DEFINER` function.
-
-## Access
-
-Multi-user. Bearer tokens stored as SHA-256 digests, so a database dump does
-not also hand over live sessions. Identity comes from `current_user_id` and
-nowhere else; every route naming a relationship or person passes an ownership
-check first, because RLS scopes a session to one relationship without saying
-whose it is. A cross-account request gets 404, not 403 — whether someone
-else's relationship exists is itself not disclosed.
-
-Telegram identity resolves through `telegram_accounts`; an unlinked chat gets
-nothing, and the in-memory person selection is re-verified against the
-database on every message.
-
-Bearer tokens no longer require manual SQL. Use `sonder token create --user
-<UUID>`, `sonder token list --user <UUID>`, and `sonder token revoke --user
-<UUID> <TOKEN_ID>`. Plaintext is printed only at creation; listing never
-reveals token digests.
-
-Telegram `/list` shows relationship UUIDs. `/who <relationship UUID>` is the
-unambiguous selector; exact display names remain a convenience only when
-unique, while duplicate names return choices instead of selecting by accident.
-Selections are stored by relationship UUID and revalidated before use.
-
-## Erasure
-
-The control that makes modelling a real person acceptable here, so it is
-treated as a security boundary rather than a convenience.
-
-| | |
-|---|---|
-| `GET /person/{id}` | everything held about them, including which traits were inferred — read this before deciding |
-| `DELETE /person/{id}` | the person and everything ever derived from them; verifies afterwards and returns 500 rather than reporting a partial success |
-| `DELETE /relationship/{id}` | the relationship only, keeping the person record |
-| `GET /residue` | profiles with no live relationship, or past retention |
-
-Deleting the relationship alone leaves the inferred profile behind, which is
-the wrong half to keep — hence the separate person-level erasure and the
-residue sweep.
-
-## Channels
-
-Telegram, an iOS share-sheet shortcut posting screenshots to `/ingest`, and —
-since Tencent opened it officially — WeChat itself.
-
-**The WeChat channel replaced an earlier refusal, and the refusal was right
-for as long as it was true.** The old text here read: *not WeChat via a bot
-protocol, though that is where the conversations are: driving a personal
-account through an unofficial protocol risks the account.* That reasoning
-applied to WeChatPadPro and PC-client hooks, which are account-risking reverse
-engineering. Tencent now ships **ClawBot**, an official bot channel built on
-the `ilink` protocol (`ilinkai.weixin.qq.com`, npm scope `@tencent-weixin`),
-with published terms of use. `sonder/wechat/` speaks that protocol directly —
-HTTP/JSON, no Node and no OpenClaw gateway required.
-
-The second half of the old objection — *"it reads everything I say" is a
-different relationship with a tool than "here is something I am showing you"* —
-turned out not to apply either, and that is worth stating precisely because it
-is the part that would have mattered. The channel is a **bot account you
-message**, not your personal account being driven. The official client drops
-any message from a sender that has not paired with it
-(`dmPolicy: "pairing"`, checked in `process-message.ts`), so what reaches
-sonder is what somebody deliberately sent to the bot. The product stance is
-unchanged: you hand it conversations, it does not harvest them.
-
-Pairing is a QR scan, and the credential it returns lives in `.env` beside
-`SONDER_TELEGRAM_TOKEN`:
-
-```bash
-./scripts/run-local.sh cli wechat login    # prints a QR, stores the token
-./scripts/run-local.sh cli wechat status   # paired or not; never prints it
+$ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --evidence e1
+拒绝：「body.appearance」是受保护的命名空间，证据再多也不能推断。
 ```
 
-`scripts/run-local.sh` is the form that always works, because it assembles the
-DSNs from `.env` first. A checkout whose editable install has gone stale has no
-`sonder` console script at all — `pip install -e .` restores it — and every
-command except `wechat login` needs `SONDER_DATABASE_URL` set before it will
-start, which is what the wrapper is doing for you.
+---
 
-The channel accepts text and forwarded pictures. A forwarded screenshot goes
-through `ingest_screenshots` unchanged — the same vision call, the same
-evidence refs, the same artifact TTL as a picture posted to `/ingest` — because
-where a picture came from is not something the observation should depend on.
-Media on WeChat's CDN is AES-128-ECB encrypted and the key travels in the
-message; `sonder/wechat/media.py` handles both key encodings the API emits and
-the two URL shapes, and `tests/test_wechat_media.py` covers it against a mocked
-CDN. What that test cannot cover is the real CDN changing its object format.
+## 这个形态放弃了什么
 
-**Why not the vault.** The plan for this channel said the bot token would live
-in `vault_records`, and it does not. That table holds sensitive material *about
-a person* — every value of its `provenance` enum is a statement by somebody —
-and it is scoped by `relationship_id`. A channel credential is an operator
-secret, which is what `.env` already holds for Telegram. The runner's role
-settles it: `sonder_wechat` has no table privileges at all, so reading the
-vault would mean granting it some, and "one RPC and nothing else" is a property
-worth more than putting one string in a different file.
+必须说清楚，因为它是这个项目唯一真正重要的取舍。
 
-Two boundaries worth knowing before relying on it. Tencent's terms reserve the
-right to throttle, filter, block or withdraw the channel (clauses 4.7 and
-7.2), so it cannot be the only way in — Telegram stays. And `bot_type=3` is
-hard-coded in the official client with no published meaning, so what account
-type it selects is something the first real pairing has to confirm.
+引擎那一版把规矩放在**数据库约束**和 **pydantic 校验器**里，两层独立，任何一层都
+不是唯一挡住坏结论的东西。README 当时写着：这些事「由 schema 层拒绝，而不是靠提示词
+劝阻」。
 
-### One implementation, three surfaces
+**这句话在现在的形态下不再成立。** 现在规矩由 `scripts/record.py` 执行，而它是一段
+**被要求去运行**的脚本。一条数据库约束无法被跳过；一段脚本可以——不运行它，或者绕开
+它直接改 markdown 文件。`check.py` 是事后审计，而它的效力完全取决于「到底跑了没有」。
 
-Telegram, WeChat and the browser page offer the same product, so the parts
-that are the same live in `sonder/channels.py`: which relationship a chat is
-about, how a name or a number resolves to one, and how a result is worded.
-What stays with the channel is the outcome affordance — Telegram presses a
-button, WeChat types a digit — because that is a difference in transport, not
-in product.
+诚实的说法是：
 
-The shape of a reply is decided once, and it leads with the sentence. The
-first version put the objective, the rationale, the milestone, the notes and
-the alternatives in the same message: measured against a real suggestion that
-was 307 characters, of which 15 were the thing the user came for. Everything
-else is now one question away — "为什么", a button, or a disclosure — and it
-is rendered by `channels.render_detail` rather than by each front end. The page
-used to hold its own copies of the objective and tone label maps; two surfaces
-translating the same enum is how a product starts disagreeing with itself.
+- **活下来的**：规矩本身，而且现在它们**可执行、可测试、会给出人能读懂的理由**。
+  被拒绝时 agent 拿到的是一句能转述给你的话，而不是一段 traceback。
+- **丢掉的**：不可跳过性。多用户隔离（原来的行级安全）。微信和 Telegram 通道。
+  用户自带 API key。评测套件和标定。第三方记录的保留期强制执行（现在靠
+  `check.py` 报告，不靠数据库拒绝）。
+- **不变的**：这是给**一个人**用的工具。多人共用会退回到「一个人一份档案」的
+  文件隔离，而那比行级安全弱得多。
 
-"What do you know about her" is answered the same way on all three surfaces,
-from `channels.briefing`. It reads the state the engine has actually
-accumulated — messages held, per-axis readings with their confidence, which
-axes are moving — and it does not run a model to do it, because the answer is
-already on disk. Uncertain readings are labelled rather than hidden: a number
-presented without its confidence is exactly the confident-sounding claim this
-project exists to refuse.
+如果这几条里有哪一条对你重要，引擎那一版在 `f412197`，它是完整可运行的。
 
-## Deliberately not built
+## 它不该做什么
 
-`sexual-skills`, `kink` and the simulation engine (doc §32–38, §53). The
-`intimacy` skill and its track are in; the narrower technique and kink
-modules are not, because they depend on preference and boundary state being
-trustworthy first, and that needs real usage to calibrate. Their guardrails
-already exist and are tested: protected namespaces, consent typing and the
-vault tier all refuse writes today.
+- **不替你做决定。** 它给判断和选项，你选。尤其不催表白、不催分手、不催摊牌。
+- **不做心理诊断。** 「回避型依恋」描述行为可以，贴标签不行。它不是医生。
+- **不用套路话术。** 它给的是基于**这个人**的具体做法。
+- **不碰未成年人。** 出现这种信号就停下，并说明原因。
+
+---
+
+## 关于隐私
+
+`targets/` 里是关于真人的私人材料。默认它在仓库目录里，而仓库可能被 git 管着、
+可能被推到远端——**这是默认设置，不是推荐设置**。真正开始用之前，把
+`ROMANCE_TARGETS` 指到仓库外面去，并确认 `targets/` 在 `.gitignore` 里。
+
+第三方记录默认带一年保留期，`check.py` 到期会报错。这是这套东西能给的最低限度的
+体面：你可以给一个人建模，但得在上面写个截止日期。

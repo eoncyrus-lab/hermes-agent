@@ -1,14 +1,25 @@
-.venv/
 __pycache__/
 *.pyc
+.DS_Store
+
+# Private material about real people. This must never be committed: the archive
+# is the one thing here that cannot be regenerated, and the one thing whose
+# disclosure would hurt someone who never agreed to any of this.
+#
+# If you set ROMANCE_TARGETS, point it somewhere outside the repo as well --
+# this rule only covers the default location.
+/targets/
+
+# The engine era's secrets: provider API keys, the harness vault key, the
+# WeChat bot token. Nothing in the current tree reads this file, but it is
+# still the file that must not be committed.
 .env
+
+# The engine era's local state, kept here so an old checkout that still has
+# these directories never stages them by accident.
+/storage/
+backups/
+.venv/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
-.DS_Store
-# Anchored with a leading slash: the local Postgres data directory only.
-# Unanchored, this pattern matches every directory named `storage` at any
-# depth -- which silently excluded sonder/storage/ and shipped a package that
-# could not be imported.
-/storage/
-backups/
