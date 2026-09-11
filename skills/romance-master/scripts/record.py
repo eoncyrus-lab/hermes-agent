@@ -64,7 +64,7 @@ TARGETS = _targets_dir()
 FICTION = TARGETS / "fiction"
 
 # 置信度上限，按支撑一条结论的*独立*观察条数。规则写在
-# `references/method.md`，这里放着是因为它是条程序能执行的规则。一条观察
+# `method` 那份 skill，这里放着是因为它是条程序能执行的规则。一条观察
 # 撑不起 0.45 以上——没有任何对单句话的解读配得上更高。
 CEILINGS = {0: 0.0, 1: 0.45, 2: 0.60, 3: 0.70, 4: 0.78, 5: 0.84}
 CEILING_AT_SIX = 0.85
@@ -112,7 +112,7 @@ EMPTY = {
 
 
 class Refused(RuntimeError):
-    """这次写入会破坏 `references/method.md` 里的某条规矩。"""
+    """这次写入会破坏 `method` 那份 skill 里的某条规矩。"""
 
 
 class AuditFailed(RuntimeError):
@@ -120,6 +120,16 @@ class AuditFailed(RuntimeError):
 
     和 `Refused` 分开，因为后果不同：`Refused` 是**什么都没发生**，这个
     **已经落盘了**，需要的是去修那个档案，不是重试。
+    """
+
+
+class Unwritable(RuntimeError):
+    """档案根本写不进去——几乎总是沙箱，不是磁盘。
+
+    没有这一层的话，权限拒绝会以一段 Python traceback 出现，而 agent 会把它
+    读成「工具坏了」。真实原因是环境的：会话默认的 `workspace-write` 策略只
+    允许改工作区内的文件，而档案默认在 skill 目录里——**只要会话的工作区不是
+    这个仓库，每一次写入都会被拒。**
     """
 
 
@@ -186,7 +196,26 @@ def _write(name: str, meta: dict[str, str], tables: dict[str, list[list[str]]]) 
         for row in tables[section]:
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
-    path_for(name).write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    path = path_for(name)
+    body = "\n".join(lines).rstrip("\n") + "\n"
+    try:
+        path.write_text(body, encoding="utf-8")
+    except OSError as exc:
+        raise Unwritable(
+            f"{path} 写不进去。\n"
+            f"  {type(exc).__name__}: {exc}\n\n"
+            "这几乎总是**沙箱**，不是磁盘满、也不是文件权限配错。会话默认的\n"
+            "`workspace-write` 策略只允许改工作区内的文件，而档案默认在 skill\n"
+            "目录里——只要这个会话的工作区不包含下面这个目录，每一次写入都会\n"
+            "被拒：\n\n"
+            f"    {ROOT}\n\n"
+            "三个办法，任选一个：\n"
+            f"  1. 用上面这个目录、或者它的任何一个上级目录（比如仓库根）作为\n"
+            "     这个会话的工作区\n"
+            "  2. 把档案放到工作区里面：export ROMANCE_TARGETS=<工作区内的目录>\n"
+            "  3. 这个会话改用 danger-full-access 权限\n\n"
+            "改参数重试没有用——这不是这个脚本能解决的问题。"
+        ) from exc
     _audit(name)
 
 
@@ -655,6 +684,10 @@ def main() -> int:
         # 看到 2 应该改参数重试，看到 1 应该去修文件。
         print(f"自检未通过：{exc}", file=sys.stderr)
         return 1
+    except Unwritable as exc:
+        # 第三种：环境不允许写。同样什么都没发生，但改参数没用——要去改环境。
+        print(exc, file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

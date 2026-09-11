@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check every target file against the rules in `references/method.md`.
+"""Check every target file against the rules in the `method` skill.
 
 `record.py` refuses a bad write at the moment it happens. This catches what a
 refusal cannot: files edited by hand, a claim whose evidence was later deleted,
@@ -24,6 +24,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from record import AXES, CONSENT_STATES, PROTECTED, ROOT, TARGETS, ceiling_for, _read
+
+# 规矩写在兄弟 skill `method` 里。这里指向真实路径，因为这段字符串会出现在
+# 每一条报错里——指错地方比不指更糟。
+METHOD_SKILL = ROOT.parent / "method" / "SKILL.md"
 
 # 任何形如 ISO 日期的片段。全角/半角括号、有没有括号都能取到。
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -171,7 +175,7 @@ def main() -> int:
 
     if total:
         print(f"\n{total} 处问题。这些是规矩，不是建议——见 "
-              f"{ROOT / 'references' / 'method.md'}")
+              f"{METHOD_SKILL}")
         return 1
     return 0
 

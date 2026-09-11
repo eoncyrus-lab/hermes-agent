@@ -6,14 +6,26 @@ whenToUse: 任何要对某个**具体的人**下结论的场合——也就是�
 
 # Method
 
-The rules below are the whole reason this skill exists. Everything else in
-`references/` is domain knowledge — how people work, what a message is doing,
-what to say. This file is what stops that knowledge from being used to
-manufacture confident claims about a real person who never agreed to be
-modelled.
+> **Where the paths point.** Every `scripts/...` and `targets/...` below means
+> the **`romance-master`** skill's directories — never this file's own. That
+> matters because the harness tells you to resolve a skill's relative paths
+> against *that skill's* base directory, and this is a sibling skill: resolving
+> `scripts/record.py` against `skills/method/` finds nothing. It lives at
+> `skills/romance-master/scripts/record.py`.
+>
+> The orchestrator (`romance-master`) tells you to `cd` there first. Do that,
+> and every command in this file works verbatim.
 
-Read it before answering anything about a specific person. `scripts/check.py`
-enforces the parts of it that can be enforced mechanically; the rest is on you.
+The rules below are the whole reason this skill exists. The other sixteen
+skills are domain knowledge — how people work, what a message is doing, what
+to say, what to do in bed, when to leave. This file is what stops that
+knowledge from being used to manufacture confident claims about a real person
+who never agreed to be modelled.
+
+Read it before answering anything about a specific person. The
+`romance-master` skill's `scripts/check.py` enforces the parts of it that can
+be enforced mechanically — and `record.py` now runs it automatically after
+every write; the rest is on you.
 
 ---
 

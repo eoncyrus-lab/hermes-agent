@@ -138,6 +138,19 @@ def main() -> int:
         r = chk(["小美"], env)
         case("置信度拔高被抓到", r.returncode == 1 and "超过了" in r.stdout, r.stdout)
 
+        # 报错里会指一份文件让人去读规矩。指向一个不存在的路径比不指更糟——
+        # 之前它拼的是 `references/method.md`，而那个目录早就不在了。
+        import re as _re
+
+        pointed = _re.findall(r"(/\S*?\.md)", r.stdout + r.stderr)
+        case("报错里给出了规矩所在文件的路径", bool(pointed), r.stdout)
+        if pointed:
+            case(
+                "那个路径真实存在",
+                all(Path(p).exists() for p in pointed),
+                "、".join(p for p in pointed if not Path(p).exists()),
+            )
+
         print("跨目标隔离")
         accepts("建第二个目标", ["new", "小丽"], env)
         accepts("记同样的证据", ["evidence", "小丽", "--source", "原文", "--text", "她主动问我周末有没有空"], env)
@@ -189,6 +202,16 @@ def main() -> int:
         print("路径逃逸")
         refuses("目标名不能带斜杠", ["new", "../../etc/passwd"], env)
         refuses("目标名不能以点开头", ["new", ".hidden"], env)
+
+        print("环境不允许写（沙箱 / 权限）")
+        targets_dir = Path(env["ROMANCE_TARGETS"])
+        targets_dir.chmod(0o500)
+        r = rec(["new", "写不进"], env)
+        targets_dir.chmod(0o700)
+        case("不可写时报退出码 3", r.returncode == 3, f"退出码 {r.returncode}\n{r.stderr}")
+        case("不是一段 traceback", "Traceback" not in r.stderr, r.stderr[-200:])
+        case("说明里点出了工作区这个真实原因", "工作区" in r.stderr, r.stderr)
+        case("说明里给了出口", "ROMANCE_TARGETS" in r.stderr, r.stderr)
 
     finally:
         shutil.rmtree(root, ignore_errors=True)
