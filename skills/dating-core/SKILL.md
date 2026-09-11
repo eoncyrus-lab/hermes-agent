@@ -111,8 +111,9 @@ possible, and should not be, for something that made her feel unsafe.
 
 ## Platform context
 
-- **Dating apps** — low investment on both sides by default; move to a real
-  conversation or a meeting reasonably early or it decays
+The channel changes what a move costs. Dating apps have their own skill
+(`apps`) — the funnel, the profile, converting a match into a meeting.
+
 - **Instagram/social** — audience is present even in DMs; ambiguity is safer
   and lower-stakes here
 - **WeChat/messaging** — usually means real-life overlap; the cost of a

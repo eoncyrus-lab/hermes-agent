@@ -159,22 +159,13 @@ topics. Answer them practically.
 
 ## Where the rest of this lives
 
-This file covers communication, compatibility and desire — the two of them
-working out what each wants and whether it fits. Three sibling skills carry the
-parts it deliberately does not:
+This file is the *communication* layer — what each wants and whether it fits.
+The *how* is in sibling skills, which the orchestration table routes to:
+`technique` for the physical, `kink` for negotiation and risk, `erotic` for
+writing and talking.
 
-- **`technique`** — the physical how: hands, mouth, penetration, positions,
-  pace, toys, lubricant compatibility, pain, and when something is a doctor's
-  question rather than a technique question.
-- **`kink`** — negotiation, limits and safewords, power exchange, the real
-  risks in restraint, impact and breath play, and sub drop.
-- **`erotic`** — writing and talking: 文爱, fantasies, scenarios, escalating
-  over text with a real partner, and co-writing scenes.
-
-Load them alongside this file when the question is about *how* rather than
-*what they want*. Erotica and roleplay are in scope — see `erotic` — with one
-rule that file states in full: **fiction never enters the archive.** What
-happens in a scene is not evidence about anyone.
+**Fiction never enters the archive.** What happens in a scene is not evidence
+about anyone. `erotic` states that rule in full.
 
 ## What this skill will not do
 
