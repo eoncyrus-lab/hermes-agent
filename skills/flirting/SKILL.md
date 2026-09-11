@@ -1,80 +1,74 @@
 ---
 name: flirting
-description: 调情的几种模式各自动作是什么，以及怎么判断它有没有落地。
+description: 调情的几种模式各自动作是什么、每种具体怎么说、以及怎么判断它有没有落地。
 whenToUse: 有暧昧张力但还没有明确进展，用户在问怎么制造、怎么回应、或者某句话算不算调情。
 ---
 
 # Flirting
 
-Flirting is the negotiation of ambiguity. Both people can see where it might
-go; neither has committed. The ambiguity is the point — it lets two people
-explore interest while both keep a way out that costs nobody anything.
+调情是**对暧昧的协商**。两个人都看得见它可能往哪去，但都还没承诺。暧昧本身就是重点 —— 它让两个人可以试探兴趣，同时各自留着一条退路，而且这条退路不花任何人的代价。
 
-Which means the failure modes are: resolving the ambiguity too early
-(pressure), or never resolving it at all (an ambiguity that never goes
-anywhere becomes a habit, and habits are not attraction).
+所以失败模式有两个：**太早把暧昧解开**（压力），或者**一直不解开**（暧昧永远没有下文就变成了习惯，而习惯不是吸引）。
 
-## Modes
+## 几种模式，以及每种具体怎么说
 
-**Teasing** — light provocation about something safe and non-central. Works
-because it signals you are not managing her. Fails when it touches anything
-she is actually insecure about; then it is not teasing.
+**逗弄（Teasing）** —— 对一个安全、非核心的点轻轻挑衅。它管用的原因是**它传递出你没有在小心翼翼管着她**。一旦碰到她真正在意的事，它就不是逗弄了。
 
-**Subtext** — meaning that is available but unstated. The strongest mode in
-text, because it lets her choose the reading. Deniable in both directions.
+> "你上次说你会做饭，我现在持保留意见。"
+> "行吧，这题算你赢。就这一题。"
 
-**Push-pull** — warmth alternating with distance. Genuinely effective and
-genuinely the most abusable idea in this whole field. Used deliberately to
-create anxiety it is manipulation, full stop. The legitimate version is
-simply: be warm when you feel warm, be occupied when you are occupied, and
-do not perform either.
+**潜台词（Subtext）** —— 意思在那儿，但不说破。**文字里最强的一种**，因为它把解读权留给她，两个方向都能退回。
 
-**Role contrast** — playing with an asymmetry that already exists between
-you (she teaches you something, you know a thing she doesn't). Works because
-it creates a stable frame with room to move in.
+> "今天这个位置挺好，看你看得很清楚。"
+> "你刚才那个表情，我记住了。"
 
-**Intellectual flirting** — disagreement with enjoyment. Requires actual
-disagreement, not manufactured contrarianism.
+**推拉（Push-pull）** —— 温度交替。**真有效，也真是这一整块里最容易被滥用的东西。** 故意制造焦虑就是操控，没有例外。正当的版本只有一句：**你有温度的时候就热，忙的时候就忙，两个都不要演。**
 
-**Callback** — returning to something only you two share. This is the mode
-that compounds: it says "there is a history here" without saying it.
+**角色反差（Role contrast）** —— 玩你们之间已经存在的某种不对称（她教你一件事、你懂一个她不懂的）。它管用是因为它造出一个稳的框架，而框架里有活动空间。
 
-**Vulnerability** — offering something real and slightly costly. Highest
-risk, highest return, and the one people reach for too early. Vulnerability
-before comfort reads as a demand for intimacy rather than an offer of it.
+> "这个我真不懂，你教我。"
+> "你负责点菜，我负责别的。"
 
-**Future projection** — casually placing her in a hypothetical future. Light
-touch only; heavy use is pressure wearing a costume.
+**智性调情（Intellectual flirting）** —— 带着享受的分歧。**必须是真的分歧**，不能是为了唱反调而唱反调。
 
-**Direct** — plainly saying you are interested. Underrated. When ambiguity
-has run long enough, directness is the escalation. It is also the only mode
-that gives her a clean opportunity to say no, which is part of why it works.
+> "我不同意，但我喜欢你这么想。"
 
-## Calibration
+**回指（Callback）** —— 回到只有你们两个知道的那件事。**这是会复利的一种**：它说出了"我们之间有历史"，而不用真的说。
 
-The register should sit slightly ahead of established comfort — far enough to
-be a move, close enough that stepping back costs nothing. Too far ahead reads
-as pressure regardless of the words. Too far behind reads as a friend.
+> "又是这个表情。跟上礼拜三一模一样。"
+> "这个梗你都还记得。"
 
-**How to tell it landed:** she matches the register. Not that she responds
-warmly — warmth is politeness. Matching means she plays too, or raises, or
-returns the subtext. If she consistently answers the literal content of an
-ambiguous message, she is declining the register, and the correct response is
-to come back down without comment.
+**示弱（Vulnerability）** —— 给出一样真实的、稍微有点代价的东西。**风险最高、回报最高，也是最常被过早使用的一种。** 舒适感还没建立就示弱，读起来不是"我把自己交给你"，是"我在要你负责我的情绪"。
 
-## Reciprocity is the whole signal
+> "有件事我没跟别人说过。"
 
-One person flirting is not flirtation, it is a performance with an audience.
-If you cannot point to her escalating something herself in the last several
-exchanges, the honest reading is that you are the only one in it.
+**未来投射（Future projection）** —— 随口把她放进一个假设的未来里。**只能轻轻点**，用得重就是穿着戏服的压力。
 
-## Boundaries
+> "那家店等天暖了去。"
+> "你这种人应该会喜欢那个展。"
 
-If a mode has been declined once, it is done. Not "try again in a different
-way later" — declined. Re-running a rejected register after a delay is the
-same move with a timer on it, and she will read it correctly.
+**直接（Direct）** —— 明说你有兴趣。**被低估的一种。** 暧昧拖得够久之后，直接就是升级。而且它是唯一一种**给她一个干净的说不的机会**的模式 —— 这也是它管用的原因之一。
 
-Anything that works by making her feel worse — insecure, anxious, jealous,
-small — is out. Not because it fails, but because it works, and what it
-builds is not worth having. A relationship that requires you to keep someone
-slightly off-balance requires you to keep doing it forever.
+> "我喜欢你，不是朋友那种。"
+
+## 校准
+
+语域应该**略微领先于已经建立的舒适度** —— 远到算一步动作，近到她退回去不花代价。太靠前，不管措辞多好都是压力。太靠后，就是朋友。
+
+**怎么知道落地了：她跟着上同一个语域。**
+
+不是"她回应得热情"—— 热情是礼貌。**跟着上**是指她也玩、也加码、也把潜台词递回来。
+
+**如果她一直只回答字面意思，就是在拒绝这个语域** —— 正确的反应是**无声地降回去**，而不是换个说法再试一次。
+
+## 互惠才是全部的信号
+
+一个人调情不是调情，是有观众的单人表演。
+
+> **如果在最近十几个来回里，你指不出她主动加码过的那一次，诚实的读法就是：只有你一个人在里面。**
+
+## 边界
+
+**一种模式被拒绝过一次，就是结束了。** 不是"过一阵换个方式再试"—— 是结束了。隔一段时间重开一个已经被拒的语域，是同一招加了个计时器，而她会正确地读出来。
+
+**任何靠让她难受来起作用的做法都不行** —— 让她不安、焦虑、嫉妒、觉得自己小。**不是因为它不管用，而是因为它管用，而它建起来的东西不值得要。** 一段需要你让对方持续失衡的关系，需要你永远保持那个动作。

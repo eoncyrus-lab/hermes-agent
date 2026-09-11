@@ -1,129 +1,109 @@
 ---
 name: dating-core
-description: 早期关系的推进——读兴趣、升级、邀约，以及被拒之后怎么收场。
+description: 早期关系的推进——读兴趣、升级、邀约、被拒之后怎么收场。每一段都带能直接用的说法。
 whenToUse: 关系还在早期，用户在问要不要更进一步、怎么约出来、还有没有戏。
 ---
 
-# Early-stage progression
+# 早期推进
 
-Covers first contact through to a defined relationship. Neutral, behavioural
-vocabulary throughout: signals are described as what someone *did*, never as
-what someone *is*.
+从第一次接触到关系确立。**全程用行为词汇**：信号一律描述成"她**做了什么**"，绝不说"她**是什么**"。
 
-## Vocabulary
+## 换掉那套词
 
-This field inherited a vocabulary built for a worldview where attraction is
-extracted from people. The concepts underneath are sometimes real; the framing
-is not, and the framing determines what a user does with them.
+这个领域继承了一套为"从人身上提取吸引"的世界观造的词。**底下的概念有时是真的，框架不是** —— 而框架决定用户会拿它做什么。
 
-| Instead of | Use | Because |
+| 别用 | 用 | 因为 |
 |---|---|---|
-| IOI / indicator of interest | positive interaction signal | describes behaviour, not her hidden score |
-| IOD | disengagement signal | same |
-| shit test | playful challenge | it is usually just play, not an exam |
-| frame control | conversational leadership | you set a tone; you do not control her |
-| kino escalation | physical progression | progression is mutual or it is nothing |
-| target | her, or the person | she is not an objective |
-| number close | getting a number | it is not a transaction |
+| IOI / 兴趣指标 | 正面互动信号 | 描述行为，不是她心里的一个分数 |
+| IOD | 疏离信号 | 同上 |
+| 废物测试 | 玩笑式的挑衅 | 它通常就只是玩，不是考试 |
+| 掌控框架 | 对话里的主导 | 你可以定调，你不能控制她 |
+| 目标 | 她 / 这个人 | 她不是一个任务目标 |
+| 拿号 | 要联系方式 | 这不是一笔交易 |
 
-The rename is not decoration. "She's testing you" tells the user to perform.
-"She said something playful and provocative" tells him to respond like a
-person, which is both more accurate and more effective.
+**改词不是装饰。**「她在测试你」让用户去表演；「她说了句挑逗的话」让用户像个人一样回应 —— 后者既更准，也更有效。
 
-## Stages, and why they are only a label
+## 阶段只是标签，不是梯子
 
-S0 stranger · S1 familiarity · S2 active interaction · S3 personal connection
-· S4 flirting · S5 mutual attraction · S6 dating · S7 relationship
+S0 陌生 · S1 眼熟 · S2 有互动 · S3 私人话题 · S4 暧昧 · S5 互相有意思 · S6 在约会 · S7 在一起
 
-Useful for a one-line summary. Useless for decisions, because two
-relationships at "S4" can need opposite things. Decide from the actual
-dimensions — comfort, momentum, reciprocity, initiative balance — not the
-label.
+**用来一句话总结可以，用来做决定没用** —— 两个都在 "S4" 的关系可能需要完全相反的东西。**决定要看实际的维度**：舒适度、势头、对等程度、主动权分布。
 
-Stages are not a ladder to climb on schedule. Rushing S3 to reach S4 produces
-a person who feels handled.
+阶段也不是要按日程爬的梯子。**把 S3 赶着推到 S4，造出来的是一个觉得自己被"处理"了的人。**
 
-## Reading interest without inventing it
+## 读兴趣，但不发明它
 
-Signals worth weight, roughly in ascending order:
+**值得给权重的信号，从弱到强：**
 
-1. **Sustained reciprocity** — she matches effort over weeks, not once
-2. **Unprompted initiation** — she starts conversations without a reason
-3. **Voluntary disclosure** — she tells you things she did not have to
-4. **Continuity** — she returns to topics from days ago
-5. **Time investment** — she makes room for you when she is busy
-6. **Escalation reciprocated** — she meets a shift in register with the same
+1. **持续的对等投入** —— 她**连着几周**都在承担一半，不是某一次
+2. **没理由的主动** —— 没事也发消息。比如突然发来一张路上拍的照，"你看这个"
+3. **主动吐露** —— 说了本不必说的事。"我昨天跟我妈吵架了"——她不欠你这条信息
+4. **延续性** —— 隔了几天还提回你之前说的事。"你上回说的那个面试怎么样了"
+5. **时间投入** —— 忙的时候也腾出空。加班到十点还愿意出来坐半小时
+6. **升级被接住** —— 你把话往暧昧抬了一档，她**跟着上了同一档**（见 `flirting`）
 
-Signals worth almost nothing on their own: reply speed, message length, emoji,
-laughing at jokes, agreeing to a group activity, general friendliness. All of
-these are dominated by personality and circumstance. A fast texter texts
-everyone fast.
+**几乎不值钱的信号**：回复速度、消息长度、表情包、被逗笑、答应参加群体活动、一般的友好。**这些主要由性格和处境决定** —— 一个打字快的人对谁都打字快。
 
-**The reliable test is not intensity, it is reciprocity over time.** One
-enthusiastic evening means less than four weeks of her carrying half.
+> **可靠的判据不是强度，是"对等程度随时间的累积"。** 一个热情的晚上，不如她连着四周承担一半。
 
-## Invitation
+## 邀约
 
-Ask when there is something to build on: sustained two-way engagement and at
-least one moment of genuine ease. Not when a checklist says stage four.
+**在有东西可依托的时候开口**：持续的双向互动，加上至少一次真正放松的时刻。不是清单说到 S4 了。
 
-What works:
-- **Specific** — an activity, a rough time. "Sometime" is not an invitation.
-- **Low-cost to decline** — she can say no without it becoming an event
-- **Once** — ask, accept the answer. Asking again after a soft no converts a
-  small no into a firm one, and converts you into someone she manages.
+**怎么说 —— 对比够清楚了：**
 
-A deflection with an alternative offered is interest with a scheduling
-problem. A deflection with nothing offered, twice, is an answer. Believe it
-the second time; there is no third reading that helps you.
+> ❌ "有空一起吃个饭？"
+>
+> ✅ "你说过的那家店我去看了，周四晚上七点，去吗？我订位。"
 
-## When it cools
+区别在**具体到可以回答**。第一句把"要不要、什么时候、去哪"全推给了她。
 
-First: **check whether anything actually changed.** Reply latency drifting
-from six minutes to forty is usually life. Compare against her own baseline
-over weeks, not against last Tuesday.
+**三个要求：**
 
-If it is real:
+- **具体** —— 一个活动 + 一个大致时间。"改天"不是邀约。
+- **拒绝的代价低** —— 她能说不，而这件事不会变成一个事件。**别在邀约里附加情绪。**
+- **只问一次** —— 问了就接受答案。**软拒绝之后再问一次，会把一个小"不"变成一个硬的"不"，同时把你变成一个她需要应付的人。**
 
-- **Do not chase.** Increasing volume as she decreases it is the pattern that
-  turns ambiguity into a decision, and not in your favour.
-- **Match, don't mirror-punish.** Come down to her level of investment
-  because that is proportionate, not to teach her a lesson. She can tell the
-  difference and so can you.
-- **Ask once, plainly, if it matters.** "I've enjoyed this — I can't tell if
-  you're just busy or if it's run its course. Either's fine, I'd just rather
-  know." Direct, no accusation, easy to answer honestly.
-- **Then accept the answer**, including the answer that is silence.
+**两种拒绝要分清：**
 
-## Recovery after a misstep
+- **给了替代方案**（"周四不行，周末呢"）= 有兴趣，只是时间不对
+- **什么都没给，两次** = 那是答案。**第二次就信它，没有第三种读法能帮到你。**
 
-Said something that landed badly:
+## 冷下来的时候
 
-1. Acknowledge specifically, once. No performance of guilt — that makes it
-   her job to reassure you.
-2. Do not over-apologise. Three apologies for one thing is heavier than the
-   thing.
-3. Change the behaviour, not the framing of the behaviour.
-4. Let normal resume rather than staging a reconciliation.
+**先查是不是真有变化。** 回复间隔从六分钟变成四十分钟，通常是生活在忙。**和她的基线比，不要和上周二比。**
 
-Recovery is usually possible for a bad joke or a misread. It is usually not
-possible, and should not be, for something that made her feel unsafe.
+如果确实冷了：
 
-## Platform context
+- **不要追。** 她减少的时候你增加，是那个把"暧昧"变成"决定"的模式，而且结果对你不利。
+- **跟着降，但不要报复性地降。** 降到和她相当的投入，是因为那样才成比例，不是要给她一个教训。**她分得出这两者，你也分得出。**
+- **真的在意就问一次，直接问：**
 
-The channel changes what a move costs. Dating apps have their own skill
-(`apps`) — the funnel, the profile, converting a match into a meeting.
+> "这段时间我挺开心的。我有点分不清你是最近忙，还是这事就到这儿了。哪种都行，我就是想知道。"
 
-- **Instagram/social** — audience is present even in DMs; ambiguity is safer
-  and lower-stakes here
-- **WeChat/messaging** — usually means real-life overlap; the cost of a
-  misstep is higher because there are shared people
-- **In person** — everything is faster and more legible; do not import
-  text-based caution wholesale
+直接、不指责、而且**容易诚实回答** —— 这三样缺一不可。
 
-## What this skill will not help with
+- **然后接受答案**，包括那个答案是沉默。
 
-Getting someone interested who has clearly said or shown they are not.
-Persistence past a real no is not a technique with a low success rate; it is
-a different activity, and the discomfort it causes is the mechanism, not a
-side effect.
+## 说错话之后
+
+1. **具体地认一次，就一次。** 不要表演愧疚 —— 那会变成她的活是来安慰你。
+2. **不要反复道歉。** 为同一件事道三次歉，比那件事本身更重。
+3. **改行为，不是改说法。**「我以后不那样了」是说法；下次真的不那样，才是行为。
+4. **让日常自己恢复**，不要搞一场"和解仪式"。
+
+**说错个笑话或者误读一次，通常是能挽回的。** 让她感到不安全的事，通常不能，也不应该。
+
+## 场景差别
+
+交友软件有它自己的一份（`apps`）—— 漏斗、资料、从匹配转成见面。
+
+- **Instagram / 社交平台** —— 就算在私信里也有观众。**这里暧昧更安全、代价更低。**
+- **微信 / 日常通讯** —— 通常意味着现实有交集。**犯错的代价更高，因为有共同的人。**
+- **当面** —— 一切都更快、更好读。**不要把文字里那套谨慎整个搬过来。**
+
+## 这一份帮不了什么
+
+**让一个已经明确说过或表示过没兴趣的人产生兴趣。**
+
+真正的"不"之后的坚持，不是一种成功率低的技术，是**另一种行为** —— 它造成的难受是它的机制，不是副作用。
