@@ -16,7 +16,7 @@
 微信通道，Postgres 16 + pgvector，7 个数据库角色，行级安全，8 个迁移，339 个单元
 测试和一套评测。
 
-现在它是**十份 skill 加一个编排它们的 agent**，没有服务、没有数据库、没有依赖。
+现在它是**十八份 skill 加一个编排它们的 agent**，没有服务、没有数据库、没有依赖。
 规矩没有变，执行规矩的地方变了——这个取舍下面单独讲，因为它是这个项目最需要被
 看清的地方。
 
@@ -27,51 +27,72 @@ git show f412197 --stat
 git checkout f412197 -- .        # 想全部拿回来的话
 ```
 
-## 十三份 skill
+## 十八份 skill
 
 `romance-master` 是**编排者**：它不装方法论，它判断现在是什么局面，把对的那几份
-调进来。其余十二份是知识，各自独立、按需加载。
+调进来。其余十七份是知识，各自独立、按需加载。
 
 ```
-skills/romance-master/          编排者。人设、流程、编排表、三条硬规矩
+skills/romance-master/          编排者。人设、流程、编排表、硬规矩
   SKILL.md
-  scripts/record.py             写档案。会**拒绝**违规写入
+  scripts/record.py             写档案。会**拒绝**违规写入，写完自动自检
   scripts/check.py              查档案。会揪出手改出来的错
+  scripts/selftest.py           执行层的回归测试（48 项）
   targets/<名字>.md              每个人的档案——它的长期记忆（默认位置）
+  targets/fiction/<名字>.md      虚构内容。**结构上就进不了证据表**
 skills/method/                  第一原则怎么落地：八条规矩 + 档案文件结构
 skills/reasoning/               从证据推到结论而不发明东西（横切）
 skills/communication/           一句话字面之下在做什么，以及怎么接
+skills/texting/                 发消息的手艺：节奏、长度、双发、语音、已读不回
 skills/dating-core/             早期推进：读兴趣、升级、邀约、被拒之后
 skills/flirting/                调情的几种模式，以及怎么判断有没有落地
+skills/apps/                    交友软件与相亲：资料、开场、从匹配到见面
 skills/psychology/              用来生成假设的心理学（不做诊断）
 skills/relationship-science/    什么真正预测关系能否长久
+skills/longterm/                在一起之后：平淡期、同居、见家长、结婚、异地
 skills/intimacy/                性的沟通层：欲望、契合度、怎么开口、不匹配
 skills/technique/               身体上的做法：手、口、进入、姿势、玩具、润滑、疼
 skills/kink/                    小众性癖与权力交换：协商、安全、真实风险、drop
 skills/erotic/                  情色创作：文爱、语爱、幻想、场景、跟真实伴侣升温
+skills/exit/                    该不该走：止损、消耗型关系、虐待。**保护的是用户自己**
+skills/recovery/                分手之后：挽回的可行性、不该挽回的时候、怎么走出来
 skills/philosophy/              战术问题底下的价值问题
 ```
 
-前八份的正文是英文（引擎时代原样继承）；`intimacy` 之后的四份是中文。
+前八份的正文是英文（引擎时代原样继承）；`intimacy` 之后的十份是中文。
 
 编排表（在 `skills/romance-master/SKILL.md` 里）长这样——它是引擎时代
 `skills.py` 里 `INTENT_SKILLS` 那张路由表的直系后代：
 
 | 局面 | 加载 |
 |---|---|
-| 该怎么回 | `communication` → `flirting` |
+| 该怎么回 | `communication` → `texting` → `flirting` |
+| 要不要发 / 没回我 | `texting` → `communication` |
 | 这是什么意思 | `psychology` → `communication` |
 | 要不要更进一步 | `dating-core` → `flirting` |
+| 软件 / 相亲 | `apps` → `texting` |
 | 关系出了状况 | `communication` → `relationship-science` |
+| 在一起之后 | `longterm` → `communication` |
 | 性与亲密的沟通 | `intimacy` → `communication` |
 | 具体怎么做 | `technique` → `intimacy` |
 | 性癖 / 权力交换 | `kink` → `intimacy` |
 | 情色创作 | `erotic` |
+| **该不该走** | `exit` → `recovery` |
+| 分手之后 | `recovery` → `exit` |
 | 我自己的问题 | `psychology` → `philosophy` |
+
+### `exit` 是唯一一份站在用户这一边的
+
+其余十七份都在帮他把关系往前推。`exit` 保护的是**用户自己**——`method` 第 7 条
+保护的是**对方**的不适，两者不冲突，但必须有后者。一个只会帮人追到人的顾问，
+会在用户最需要有人说"这段关系在消耗你"的时候，还在教他怎么加码。
+
+而且它要**主动触发**：用户不会问"我该不该分手"，他会问"她最近是不是很忙"。
+编排表里写明了这一点。
 
 ## 装上
 
-十三份 skill 通过 preset 的 `skill-filesystem` **`customSkillDirs`** 挂载。这一步不能省：
+十八份 skill 通过 preset 的 `skill-filesystem` **`customSkillDirs`** 挂载。这一步不能省：
 默认 skill 根只有项目根和用户根（`<projectRoot>/.dsh/skills`、`~/.dsh/skills` 等），
 **preset 自己的 `skills/` 不在其中**——已发布的 `cordis` preset 也是显式配了这项才拿到
 它自带的两份 skill 的。
@@ -85,7 +106,7 @@ skills/philosophy/              战术问题底下的价值问题
 ```
 
 这样挂上来的 skill **只对该 preset 的会话可见**——别的 preset 不会在自己的目录里看到
-这十三份东西。
+这十八份东西。
 
 `romance-master` 这个 agent preset 已经装在这个部署里（`~/.dsh/.agent-presets/romance-master/`），
 在 GUI 的 preset 选择器里叫「情圣」。它是从 `standard` 复制后逐行删出来的：留下 shell、
@@ -93,7 +114,7 @@ skills/philosophy/              战术问题底下的价值问题
 和网页检索。
 
 **代价写明白**：`customSkillDirs` 里是一个绝对路径，把 preset 钉在这个仓库的位置上。
-仓库搬走，十三份 skill 会**静默消失**（目录不存在属于合法空状态，不报错）。搬了就去改
+仓库搬走，十八份 skill 会**静默消失**（目录不存在属于合法空状态，不报错）。搬了就去改
 那一行。
 
 档案默认写在 `skills/romance-master/targets/`。要把它挪出仓库（私人数据不该和会被推到
@@ -172,6 +193,61 @@ python3 scripts/check.py                               # 交付前自检
 
 只看标准库，`python3` 3.8+ 就行——没有虚拟环境，没有 pip。
 
+## 执行层
+
+这部分是这套东西和"一个会说话的模型"真正的区别所在。它现在有四层：
+
+**1. 写入时拒绝。** `record.py` 在写入之前校验，违规就拒绝，**什么都没发生**，
+退出码 2。
+
+**2. 写入后自动自检。** 每次都跑一遍 `check.py` 的规则，有问题就以退出码 1
+报出来，并说明"已经落盘了，去修，不要重试"。
+
+这一层是后来才补上的，补的理由值得说：`check.py` 的价值完全取决于「跑了没有」，
+而在此之前它靠 agent 记得手动跑一次——**那是整套东西最薄的一环**。挂在写入路径
+上之后，通过写入发生的每一次修改都必然被验过一遍，忘了跑在结构上不可能发生。
+
+```
+$ python3 scripts/record.py evidence 小美 --source 口述 --text "她说周末有空"
+自检未通过：小美 已经写进去了，但写完之后的自检发现问题：
+  - 已知 attraction.romantic：0.99 超过了 1 条观察的上限 0.45
+
+写入本身是成功的，不要去重试——去修上面这些，或者用 `forget` 把这份档案删掉重来。
+```
+
+**退出码 2 和 1 的区别是刻意的**：2 是"什么都没发生，改参数重试"；1 是"发生了，
+但结果有问题，去修文件"。
+
+**3. 回归测试。**
+
+```bash
+python3 skills/romance-master/scripts/selftest.py    # 48 项
+```
+
+纯标准库，在临时目录里跑，不碰真实档案。它覆盖全部九条拒绝路径、"拒绝之后档案
+没被改动"、自检的触发与恢复、`check.py` 的两类侦测、虚构与证据的隔离、`forget`
+的确认、路径逃逸。
+
+**4. 记分板。**
+
+```bash
+python3 scripts/record.py score
+```
+
+跨全部档案汇总预测的应验率。**这是这套东西唯一的诚实性机制**——没有它，"先冻结
+再验证"就退化成仪式。样本小的时候它会自己说明样本小。
+
+### 删掉一个人
+
+```bash
+python3 scripts/record.py forget 小美 --yes
+```
+
+档案和创作内容一起删。**保留期的承诺靠它兑现**——在此之前，README 写着"到期就
+删掉或延期"，但没有任何命令能做这件事，那个承诺是不可执行的。给一个不是用户
+自己的人建模，只有在上面写了截止日期、**并且那个日期能被真正执行**的前提下，
+才可以接受。
+
 ## 方法
 
 八条规矩，写在 `skills/method/SKILL.md`：
@@ -208,16 +284,20 @@ $ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --ev
 
 **这句话在现在的形态下不再成立。** 现在规矩由 `scripts/record.py` 执行，而它是一段
 **被要求去运行**的脚本。一条数据库约束无法被跳过；一段脚本可以——不运行它，或者绕开
-它直接改 markdown 文件。`check.py` 是事后审计，而它的效力完全取决于「到底跑了没有」。
+它直接改 markdown 文件。
 
 诚实的说法是：
 
 - **活下来的**：规矩本身，而且现在它们**可执行、可测试、会给出人能读懂的理由**。
   被拒绝时 agent 拿到的是一句能转述给你的话，而不是一段 traceback。
-- **丢掉的**：不可跳过性。多用户隔离（原来的行级安全）。微信和 Telegram 通道。
-  用户自带 API key。评测套件和标定。第三方记录的保留期强制执行（现在靠
-  `check.py` 报告，不靠数据库拒绝）。
-- **不变的**：这是给**一个人**用的工具。多人共用会退回到「一个人一份档案」的
+- **补回来一部分的**：写入后自动自检，让"忘了跑 `check.py`"在结构上不可能发生；
+  `selftest.py` 的 48 项回归测试；`forget` 让保留期的承诺变得可执行；`score` 把
+  标定补回来一个诚实的最小版本。
+- **仍然丢掉的**：**不可跳过性**——这是最根本的一条。上面那些补丁让绕过**更难**，
+  但没有让绕过**不可能**：agent 仍然可以用 bash 直接改 markdown，只是那样做现在
+  要刻意绕开四层，而不是顺手。多用户隔离（原来的行级安全）。微信和 Telegram 通道。
+  用户自带 API key。完整的评测套件和标定。
+- **不变的**：这是给**一个人**用的工具。多人共用会退回到"一个人一份档案"的
   文件隔离，而那比行级安全弱得多。
 
 如果这几条里有哪一条对你重要，引擎那一版在 `f412197`，它是完整可运行的。

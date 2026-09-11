@@ -18,6 +18,14 @@
     record.py explicit <名字> --axis consent.kiss --state 同意 --quote "可以啊"
     record.py predict <名字> --text "她这周不会主动" --confidence 0.6
     record.py outcome <名字> --id p1 --result 应验
+    record.py scene <名字> --text "……" [--title 标题]
+    record.py scenes <名字>
+    record.py score
+    record.py forget <名字> --yes
+
+每次写入之后会自动跑一遍自检（`check.py` 的那套规则），发现问题就以退出码
+1 报出来。这是刻意的：`check.py` 的价值完全取决于「跑了没有」，挂在写入路径
+上之后，忘了跑在结构上不可能发生。
 """
 
 from __future__ import annotations
@@ -45,6 +53,15 @@ def _targets_dir() -> Path:
 
 
 TARGETS = _targets_dir()
+
+# 虚构内容单独放一个子目录，**不在 `targets/` 根下**。这一点是刻意的：
+# `TARGETS.glob("*.md")` 是档案的枚举方式，把创作文件放在根下会被当成一份
+# 档案读进来、被 check.py 按证据规则去验——而它根本不是证据。
+#
+# 防火墙（「虚构归虚构，档案归档案」）写进了四份 skill，但在此之前它只是
+# 提示词层面的一句话。有了这个目录，它才是结构上的：创作材料有自己的家，
+# 永远进不了 `证据` 表，也别想通过 check.py。
+FICTION = TARGETS / "fiction"
 
 # 置信度上限，按支撑一条结论的*独立*观察条数。规则写在
 # `references/method.md`，这里放着是因为它是条程序能执行的规则。一条观察
@@ -96,6 +113,14 @@ EMPTY = {
 
 class Refused(RuntimeError):
     """这次写入会破坏 `references/method.md` 里的某条规矩。"""
+
+
+class AuditFailed(RuntimeError):
+    """写入成功了，但写完之后的自检发现问题。
+
+    和 `Refused` 分开，因为后果不同：`Refused` 是**什么都没发生**，这个
+    **已经落盘了**，需要的是去修那个档案，不是重试。
+    """
 
 
 # ------------------------------------------------------------------ 文件本身
@@ -162,6 +187,30 @@ def _write(name: str, meta: dict[str, str], tables: dict[str, list[list[str]]]) 
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
     path_for(name).write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    _audit(name)
+
+
+def _audit(name: str) -> None:
+    """写完立刻自检，把审计从「自愿」变成「默认」。
+
+    `check.py` 的效力完全取决于「到底跑了没有」—— 而在此之前，它靠 agent
+    记得手动跑一次。那是这套东西最薄的一环：一条看着在执行、实际没人执行的
+    规矩，比没有这条规矩更糟。挂在写入路径上之后，**通过写入发生的每一次
+    修改都必然被验过一遍**，忘了跑这件事在结构上不可能发生。
+
+    惰性导入是必须的：`check.py` 反过来 import 本模块，顶层导入会成环。
+    异常不吞——自检自己崩掉是要看见的，静默失效正是要防的东西。
+    """
+    from check import check_target
+
+    problems = check_target(name)
+    if problems:
+        raise AuditFailed(
+            f"{name} 已经写进去了，但写完之后的自检发现问题：\n  - "
+            + "\n  - ".join(problems)
+            + "\n\n写入本身是成功的，不要去重试——去修上面这些，或者用 "
+            "`forget` 把这份档案删掉重来。"
+        )
 
 
 def _next_id(rows: list[list[str]], prefix: str) -> str:
@@ -385,6 +434,144 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ 虚构内容
+
+FICTION_HEADER = (
+    "# {name} · 创作\n\n"
+    "> 这里是虚构内容——场景、文爱、幻想、角色扮演。\n"
+    "> 它**永远不是证据**，永远不进 `## 证据` 表，永远不算关于她的信息。\n"
+)
+
+
+def _fiction_path(name: str) -> Path:
+    # 复用同一条名字校验，别让 `../` 从这条路溜进来
+    path_for(name)
+    return FICTION / f"{name}.md"
+
+
+def cmd_scene(args: argparse.Namespace) -> int:
+    """存一段虚构内容。不碰档案，不进证据，不参与任何推断。"""
+    if not path_for(args.name).exists():
+        raise Refused(
+            f"没有这个目标：{args.name}（先用 `record.py new {args.name}` 建）"
+        )
+    FICTION.mkdir(parents=True, exist_ok=True)
+    path = _fiction_path(args.name)
+    text = (
+        path.read_text(encoding="utf-8")
+        if path.exists()
+        else FICTION_HEADER.format(name=args.name)
+    )
+    ids = re.findall(r"^## (s\d+) · ", text, re.M)
+    new_id = f"s{max((int(i[1:]) for i in ids), default=0) + 1}"
+    title = args.title.strip() or "（无题）"
+    text = (
+        text.rstrip("\n")
+        + f"\n\n## {new_id} · {date.today().isoformat()} · {title}\n\n"
+        + args.text.strip()
+        + "\n"
+    )
+    path.write_text(text, encoding="utf-8")
+    print(new_id)
+    return 0
+
+
+def cmd_scenes(args: argparse.Namespace) -> int:
+    path = _fiction_path(args.name)
+    rows = (
+        re.findall(r"^## (s\d+) · (\S+) · (.*)$", path.read_text(encoding="utf-8"), re.M)
+        if path.exists()
+        else []
+    )
+    if not rows:
+        print(f"{args.name} 还没有创作内容。")
+        return 0
+    for sid, when, title in rows:
+        print(f"  {sid}\t{when}\t{title}")
+    print("\n这些是虚构内容，不是证据——别把它们当成关于她的信息。")
+    return 0
+
+
+def cmd_forget(args: argparse.Namespace) -> int:
+    """永久删除一个人。档案和创作内容一起删。"""
+    if not args.yes:
+        raise Refused(
+            "这会永久删除这份档案和它的全部创作内容，不可恢复。"
+            "确认要删就加 `--yes`。"
+        )
+    removed = []
+    for path in (path_for(args.name), _fiction_path(args.name)):
+        if path.exists():
+            path.unlink()
+            removed.append(_display(path))
+    if not removed:
+        raise Refused(f"没有这个目标：{args.name}")
+    for item in removed:
+        print(f"已删除 {item}")
+    print("档案已删除。这件事上，说到做到比留着方便更重要。")
+    return 0
+
+
+# ------------------------------------------------------------------ 记分板
+
+
+def cmd_score(_args: argparse.Namespace) -> int:
+    """跨档案汇总预测准确率。"""
+    files = sorted(TARGETS.glob("*.md")) if TARGETS.exists() else []
+    per: list[tuple[str, dict[str, int], int]] = []
+    pending_all = 0
+    for f in files:
+        _meta, tables = _read(f.stem)
+        rows = tables["预测"]
+        if not rows:
+            continue
+        counts = {k: 0 for k in OUTCOMES}
+        for row in rows:
+            if not row[4]:
+                continue
+            for k in OUTCOMES:
+                if row[4].startswith(k):
+                    counts[k] += 1
+                    break
+        pending = sum(1 for r in rows if not r[4])
+        pending_all += pending
+        per.append((f.stem, counts, pending))
+
+    if not per:
+        print("还没有任何预测。")
+        print()
+        print("预测是这套东西唯一能变准的方式。先写几条：")
+        print('  python3 scripts/record.py predict <名字> --text "..." --confidence 0.6')
+        return 0
+
+    settled = sum(sum(c.values()) for _n, c, _p in per)
+    print("预测记分板（跨全部档案）\n")
+    print(f"  {'':<16}{'已结算':>7}{'应验':>6}{'部分':>6}{'没应验':>8}{'待验证':>8}")
+    for name, counts, pending in per:
+        n = sum(counts.values())
+        print(
+            f"  {name:<16}{n:>7}{counts['应验']:>6}{counts['部分应验']:>6}"
+            f"{counts['没应验']:>8}{pending:>8}"
+        )
+
+    if settled:
+        hits = sum(c["应验"] for _n, c, _p in per)
+        partials = sum(c["部分应验"] for _n, c, _p in per)
+        misses = sum(c["没应验"] for _n, c, _p in per)
+        rate = (hits + 0.5 * partials) / settled
+        print(f"\n  合计结算 {settled} 条：应验 {hits}、部分 {partials}、没应验 {misses}")
+        print(f"  命中率 {rate:.0%}（部分应验按半分算）")
+        if settled < 10:
+            print(f"\n  样本只有 {settled} 条，这个数字还不能说明什么。")
+    if pending_all:
+        print(f"  还有 {pending_all} 条没结果——等它们出结果再来看。")
+    print(
+        "\n判断错了的留在档案里，那是账，不是污点。"
+        "这份记分板的意义是让你知道自己在哪类事上系统性偏乐观。"
+    )
+    return 0
+
+
 # ---------------------------------------------------------------------- 参数
 
 
@@ -434,6 +621,23 @@ def build() -> argparse.ArgumentParser:
     out.add_argument("--id", required=True)
     out.add_argument("--result", required=True, help="、".join(OUTCOMES))
     out.set_defaults(func=cmd_outcome)
+
+    scene = sub.add_parser("scene", help="存一段虚构内容（场景、文爱、幻想）")
+    scene.add_argument("name")
+    scene.add_argument("--text", required=True)
+    scene.add_argument("--title", default="")
+    scene.set_defaults(func=cmd_scene)
+
+    scenes = sub.add_parser("scenes", help="列出某个人名下的虚构内容")
+    scenes.add_argument("name")
+    scenes.set_defaults(func=cmd_scenes)
+
+    forget = sub.add_parser("forget", help="永久删除一个人和他的全部内容")
+    forget.add_argument("name")
+    forget.add_argument("--yes", action="store_true", help="确认删除，不可恢复")
+    forget.set_defaults(func=cmd_forget)
+
+    sub.add_parser("score", help="跨档案汇总预测准确率").set_defaults(func=cmd_score)
     return p
 
 
@@ -446,6 +650,11 @@ def main() -> int:
         # traceback，也不是一次静默的成功。
         print(f"拒绝：{exc}", file=sys.stderr)
         return 2
+    except AuditFailed as exc:
+        # 2 是「什么都没发生」，1 是「发生了，但结果有问题」。这个区分重要：
+        # 看到 2 应该改参数重试，看到 1 应该去修文件。
+        print(f"自检未通过：{exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
