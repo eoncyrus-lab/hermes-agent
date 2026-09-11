@@ -350,7 +350,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     print(f"# {args.name}")
     print(f"保留至 {meta.get('retention_until', '?')}\n")
 
-    if not tables["证据"] and not tables["已知"]:
+    # 空档案才说"什么都没有"。「边界」必须算进来：用户自己的档案（`我`）里
+    # 只有边界——他的偏好是明确陈述，不需要证据——早先这里只看证据和已知，
+    # 于是那份档案会显示成"关于这个人，我手上还什么都没有"，把仅有的内容
+    # 全吞掉。
+    if not any(tables[s] for s in SECTIONS):
         print("关于这个人，我手上还什么都没有。")
         return 0
 
