@@ -213,6 +213,118 @@ def main() -> int:
         case("说明里点出了工作区这个真实原因", "工作区" in r.stderr, r.stderr)
         case("说明里给了出口", "ROMANCE_TARGETS" in r.stderr, r.stderr)
 
+        # ── skill 体系自身的完整性 ────────────────────────────────────────
+        #
+        # 下面这些每一条我都是手动查过的，而且手动查抓到过两次漂移：编排表
+        # 里留着已经不存在的 skill，README 的份数在加 skill 之后没跟着改。
+        # 手动查的问题是它只在想起来的时候发生——和 `check.py` 当初的处境
+        # 一模一样。放进这里就变成每次必跑。
+        print("skill 体系自身的完整性")
+        import re as _re2
+
+        skills_dir = HERE.parent.parent
+        skills_md = sorted(skills_dir.glob("*/SKILL.md"))
+        orch_text = (skills_dir / "romance-master" / "SKILL.md").read_text(encoding="utf-8")
+        on_disk = {p.parent.name for p in skills_md}
+
+        # 1. 编排表提到的每一份都真实存在
+        named = set(_re2.findall(r"`([a-z][a-z-]+)`", orch_text)) & (
+            on_disk
+            | {
+                "method", "reasoning", "communication", "texting", "dating-core",
+                "flirting", "apps", "psychology", "relationship-science", "longterm",
+                "intimacy", "technique", "kink", "erotic", "exit", "recovery", "philosophy",
+            }
+        )
+        case(
+            "编排表提到的 skill 都存在",
+            named <= on_disk,
+            "不存在：" + "、".join(sorted(named - on_disk)),
+        )
+
+        # 2. 磁盘上的每一份都被编排表提到（没有孤儿）
+        others = on_disk - {"romance-master"}
+        case(
+            "没有孤儿 skill（每一份都被编排表路由到）",
+            others <= named,
+            "没被提到：" + "、".join(sorted(others - named)),
+        )
+
+        # 3. 编排表的每一行都写明了入口 skill
+        rows = [
+            line for line in orch_text.splitlines()
+            if line.startswith("| **") and line.count("|") >= 5
+        ]
+        bad_rows = [
+            r.split("|")[1].strip()
+            for r in rows
+            if not _re2.findall(r"`([a-z-]+)`", r.split("|")[3])
+        ]
+        case("编排表每行都有入口 skill", not bad_rows, "、".join(bad_rows))
+
+        # 4. 入口 skill 都真实存在
+        entries = set()
+        for r in rows:
+            cells = r.split("|")
+            if len(cells) >= 5:
+                entries |= set(_re2.findall(r"`([a-z-]+)`", cells[3]))
+        case(
+            "编排表的入口 skill 都存在",
+            entries <= on_disk,
+            "不存在：" + "、".join(sorted(entries - on_disk)),
+        )
+
+        # 5. 每份 skill 的 frontmatter 只有 harness 认的三个字段
+        bad_fm = []
+        for p in skills_md:
+            fm = p.read_text(encoding="utf-8").split("---")[1]
+            extra = [
+                line.split(":")[0]
+                for line in fm.strip().splitlines()
+                if line.strip() and not line.startswith(("name:", "description:", "whenToUse:"))
+            ]
+            if extra:
+                bad_fm.append(f"{p.parent.name}({','.join(extra)})")
+        case("frontmatter 只有 name/description/whenToUse", not bad_fm, "、".join(bad_fm))
+
+        # 6. name 字段与目录名一致
+        mismatched = [
+            p.parent.name
+            for p in skills_md
+            if f"name: {p.parent.name}" not in p.read_text(encoding="utf-8").split("---")[1]
+        ]
+        case("name 与目录名一致", not mismatched, "、".join(mismatched))
+
+        # 7. skill 里点名的 .md 文件真实存在
+        missing: list[str] = []
+        for p in skills_md:
+            for ref in set(_re2.findall(r"`([a-z-]+\.md)`", p.read_text(encoding="utf-8"))):
+                if not list(skills_dir.glob(f"*/{ref}")):
+                    missing.append(f"{p.parent.name}->{ref}")
+        case("skill 里引用的 .md 都存在", not missing, "、".join(missing))
+
+        # 8. README 的份数与实际一致
+        #
+        # README 用的是中文数字（「十八份 skill」），所以两种写法都要认。
+        # 第一版这里只查阿拉伯数字，于是把自己写对的 README 报成了错的——
+        # 一条实现有误的检查，比没有检查更浪费时间。
+        def _cn(n: int) -> str:
+            d = "零一二三四五六七八九"
+            if n < 10:
+                return d[n]
+            if n < 20:
+                return "十" + (d[n % 10] if n % 10 else "")
+            return d[n // 10] + "十" + (d[n % 10] if n % 10 else "")
+
+        readme = (skills_dir.parent / "README.md").read_text(encoding="utf-8")
+        forms = [f"{len(on_disk)} 份 skill", f"{len(on_disk)}份 skill",
+                 f"{_cn(len(on_disk))}份 skill", f"{_cn(len(on_disk))} 份 skill"]
+        case(
+            "README 里的 skill 份数是当前的",
+            any(f in readme for f in forms),
+            f"实际 {len(on_disk)} 份，README 里没找到 {' / '.join(forms[:2])}",
+        )
+
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
