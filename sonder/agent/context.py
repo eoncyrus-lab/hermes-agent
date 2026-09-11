@@ -11,6 +11,7 @@ re-deriving beliefs from raw text on every turn, inconsistently.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -26,10 +27,34 @@ from ..storage.repositories import (
 from ..storage.scope import Scope
 
 
+@dataclass(frozen=True, slots=True)
+class FreshTurn:
+    """A turn the caller handed over with the request, not read from the record.
+
+    Deliberately not an `Interaction`, and deliberately not written here.
+    Invariant 1 says a model-inferred assessment needs an evidence ref, and
+    this text has none yet. It reaches the generator and the Critic so they can
+    answer the thing actually in front of the user -- the hot path used to read
+    only `interactions.last_messages`, so a request that carried the
+    conversation was invisible to both and the reply was drafted against
+    `CONVERSATION: (none)`.
+
+    It becomes evidence the same way every other observation does: by going
+    through ingest. Passing text here must never be a way to skip that.
+    """
+
+    body: str
+    # "unknown" is the honest label for a block a user pasted, which has no
+    # reliable speaker structure. The renderer omits it rather than printing
+    # a speaker the caller never claimed.
+    speaker: str = "unknown"
+
+
 @dataclass(slots=True)
 class AgentContext:
     scope: Scope
     recent_messages: list = field(default_factory=list)
+    fresh_turns: list[FreshTurn] = field(default_factory=list)
     state_row: object | None = None
     preference: PreferenceModel | None = None
     trends: list[Trend] = field(default_factory=list)
@@ -120,12 +145,27 @@ class AgentContext:
         return "\n".join(out)
 
     def render_conversation(self, n: int = 25) -> str:
-        if not self.recent_messages:
+        lines: list[str] = []
+        if self.recent_messages:
+            lines.append("RECENT CONVERSATION:")
+            for m in self.recent_messages[-n:]:
+                body = m.body if getattr(m, "body", None) else "[redacted]"
+                lines.append(f"  {m.sender}: {body}")
+        if self.fresh_turns:
+            if lines:
+                lines.append("")
+            # Kept under its own heading, and after the stored history, for two
+            # reasons. The model must know this is the newest thing said, and
+            # it must not read as though the record already contains it -- the
+            # Critic scores context_match against this block, and an operator
+            # reading a transcript later should be able to tell which turns
+            # were persisted and which were merely handed over.
+            lines.append("HANDED OVER WITH THIS REQUEST (newest; not yet in the record):")
+            for t in self.fresh_turns:
+                prefix = "" if t.speaker in ("", "unknown") else f"{t.speaker}: "
+                lines.append(f"  {prefix}{t.body}")
+        if not lines:
             return "CONVERSATION: (none)"
-        lines = ["RECENT CONVERSATION:"]
-        for m in self.recent_messages[-n:]:
-            body = m.body if getattr(m, "body", None) else "[redacted]"
-            lines.append(f"  {m.sender}: {body}")
         return "\n".join(lines)
 
     def render_memory(self) -> str:
@@ -154,13 +194,24 @@ async def build(
     n_messages: int = 30,
     query_embedding: list[float] | None = None,
     include_leak_guard: bool = True,
+    fresh_turns: Sequence[FreshTurn] = (),
 ) -> AgentContext:
+    """Everything the agent is allowed to reason from, for one relationship.
+
+    `fresh_turns` is what the caller handed over with this request. It is
+    rendered into the conversation block so the hot path can answer the
+    message actually in front of the user, and it is *not* persisted: this
+    function reads, it does not write. Durable evidence still arrives only
+    through the ingest pipeline, which is the one place that assigns an
+    interaction id and an evidence ref.
+    """
     interactions = InteractionRepo(session)
     states = StateRepo(session)
     prefs = PreferenceRepo(session)
     memory = MemoryRepo(session)
 
     ctx = AgentContext(scope=scope)
+    ctx.fresh_turns = list(fresh_turns)
     ctx.recent_messages = await interactions.last_messages(scope, n_messages)
     ctx.state_row = await states.current(scope)
 

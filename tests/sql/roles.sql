@@ -12,6 +12,7 @@
 \getenv erase_password SONDER_TEST_ERASURE_DB_PASSWORD
 \getenv worker_password SONDER_TEST_WORKER_DB_PASSWORD
 \getenv bot_password SONDER_TEST_BOT_DB_PASSWORD
+\getenv wechat_password SONDER_TEST_WECHAT_DB_PASSWORD
 
 ALTER ROLE sonder_app      LOGIN PASSWORD :'app_password';
 ALTER ROLE sonder_maint    LOGIN PASSWORD :'maint_password';
@@ -19,3 +20,4 @@ ALTER ROLE sonder_identity LOGIN PASSWORD :'identity_password';
 ALTER ROLE sonder_erase    LOGIN PASSWORD :'erase_password';
 ALTER ROLE sonder_worker   LOGIN PASSWORD :'worker_password';
 ALTER ROLE sonder_bot      LOGIN PASSWORD :'bot_password';
+ALTER ROLE sonder_wechat   LOGIN PASSWORD :'wechat_password';

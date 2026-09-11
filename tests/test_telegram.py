@@ -43,14 +43,21 @@ def _identity(user_id=None):
 
 
 def _user_rows(monkeypatch, rows):
-    """Stub the user-scoped session the bot now reads through."""
+    """Stub the user-scoped session the relationship lookup reads through.
+
+    Patched on `sonder.channels`, not on the bot: the query moved there when
+    the three channels were given one implementation, and stubbing the old
+    binding would leave the real one running against a database the tests do
+    not have.
+    """
+    from sonder import channels
 
     @asynccontextmanager
     async def fake_session(scope):
         assert scope.identity_claim, "the bot must present its identity claim"
         yield _Session(rows)
 
-    monkeypatch.setattr(telegram, "user_session", fake_session)
+    monkeypatch.setattr(channels, "user_session", fake_session)
 
 
 async def test_who_duplicate_name_lists_ids_without_changing_selection(monkeypatch):
@@ -58,7 +65,7 @@ async def test_who_duplicate_name_lists_ids_without_changing_selection(monkeypat
     old_relationship = uuid4()
     candidates = [(uuid4(), "Alex"), (uuid4(), "Alex")]
     update = _update()
-    telegram.SELECTED[7] = (old_relationship, "Old")
+    telegram._SELECTION.set(7, (old_relationship, "Old"))
     monkeypatch.setattr(
         telegram, "resolve_account", AsyncMock(return_value=_identity(user_id))
     )
@@ -66,10 +73,10 @@ async def test_who_duplicate_name_lists_ids_without_changing_selection(monkeypat
 
     await telegram.who(update, SimpleNamespace(args=["Alex"]))
 
-    assert telegram.SELECTED[7] == (old_relationship, "Old")
+    assert telegram._SELECTION.get(7) == (old_relationship, "Old")
     reply = update.message.reply_text.await_args.args[0]
-    assert str(candidates[0][0]) in reply
-    assert str(candidates[1][0]) in reply
+    assert "1. Alex" in reply and "2. Alex" in reply
+    assert str(candidates[0][0]) not in reply, "the UUID is what they cannot supply"
 
 
 async def test_who_full_relationship_uuid_selects_relationship(monkeypatch):
@@ -80,19 +87,19 @@ async def test_who_full_relationship_uuid_selects_relationship(monkeypatch):
 
     await telegram.who(update, SimpleNamespace(args=[str(relationship_id)]))
 
-    assert telegram.SELECTED[8] == (relationship_id, "Alex")
+    assert telegram._SELECTION.get(8) == (relationship_id, "Alex")
 
 
 async def test_require_context_clears_deleted_relationship(monkeypatch):
     relationship_id = uuid4()
     update = _update(chat_id=10)
-    telegram.SELECTED[10] = (relationship_id, "Alex")
+    telegram._SELECTION.set(10, (relationship_id, "Alex"))
     monkeypatch.setattr(telegram, "resolve_account", AsyncMock(return_value=_identity()))
     _user_rows(monkeypatch, [])
 
     assert await telegram.require_context(update) is None
-    assert 10 not in telegram.SELECTED
-    assert "no longer available" in update.message.reply_text.await_args.args[0]
+    assert telegram._SELECTION.get(10) is None, "a dead id must not be kept"
+    assert "还没有任何对象" in update.message.reply_text.await_args.args[0]
 
 
 async def test_every_relationship_handler_rejects_group_without_state_access(
@@ -101,7 +108,7 @@ async def test_every_relationship_handler_rejects_group_without_state_access(
     secret_name = "Secret Name"
     secret_id = uuid4()
     group_id = -100123
-    telegram.SELECTED[group_id] = (secret_id, secret_name)
+    telegram._SELECTION.set(group_id, (secret_id, secret_name))
     resolve = AsyncMock(side_effect=AssertionError("identity lookup in group"))
     monkeypatch.setattr(telegram, "resolve_account", resolve)
 
@@ -139,4 +146,4 @@ async def test_every_relationship_handler_rejects_group_without_state_access(
         assert str(secret_id) not in reply
 
     resolve.assert_not_awaited()
-    assert telegram.SELECTED[group_id] == (secret_id, secret_name)
+    assert telegram._SELECTION.get(group_id) == (secret_id, secret_name)

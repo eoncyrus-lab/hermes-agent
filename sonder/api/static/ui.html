@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonder</title>
+<style>
+  :root {
+    --bg: #14131a; --panel: #1d1c25; --raise: #26252f; --line: #34323f;
+    --ink: #e8e6ef; --dim: #9a97a8; --accent: #a78bfa; --warn: #f0a868;
+    --ok: #6ee7a8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.65 ui-sans-serif, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .brand { font-weight: 600; letter-spacing: .08em; color: var(--accent); }
+  select, input, textarea, button {
+    font: inherit; color: var(--ink); background: var(--raise);
+    border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px;
+  }
+  select { min-width: 190px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  #log { flex: 1; overflow-y: auto; padding: 22px 18px; }
+  .wrap { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .msg { padding: 11px 15px; border-radius: 13px; white-space: pre-wrap; word-break: break-word; }
+  .me { background: var(--raise); align-self: flex-end; max-width: 78%; }
+  .sys { color: var(--dim); font-size: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 13px; padding: 15px 17px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .say { font-size: 16.5px; line-height: 1.6; }
+  .meta { color: var(--dim); font-size: 13.5px; }
+  .alts { border-top: 1px dashed var(--line); padding-top: 9px; display: flex; flex-direction: column; gap: 7px; }
+  .alt { color: var(--dim); font-size: 14px; }
+  /* The disclosure is the browser's own <details>, so it keeps working with a
+     keyboard and a screen reader. Only its look is overridden. */
+  summary {
+    cursor: pointer; color: var(--dim); font-size: 13.5px;
+    list-style: none; user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸ "; }
+  details[open] > summary::before { content: "▾ "; }
+  details[open] > summary { margin-bottom: 9px; }
+  summary:hover { color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row button { padding: 6px 13px; font-size: 14px; }
+  .banner {
+    margin: 14px 18px 0; padding: 11px 15px; border-radius: 11px;
+    background: rgba(240,168,104,.1); border: 1px solid rgba(240,168,104,.4); color: var(--warn);
+  }
+  footer { border-top: 1px solid var(--line); background: var(--panel); padding: 12px 18px; }
+  .composer { max-width: 780px; margin: 0 auto; display: flex; gap: 9px; align-items: flex-end; }
+  textarea { flex: 1; resize: none; min-height: 46px; max-height: 190px; }
+  .icon { padding: 11px 13px; line-height: 1; }
+  dialog {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 14px; padding: 20px; max-width: 440px; width: calc(100% - 40px);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin: 0 0 6px; font-size: 16px; }
+  dialog p { color: var(--dim); font-size: 13.5px; margin: 0 0 13px; }
+  dialog input { width: 100%; margin-bottom: 13px; }
+  .spin::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 8px;
+    border-radius: 50%; background: var(--accent); animation: p 1s infinite; }
+  @keyframes p { 50% { opacity: .25 } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">SONDER</span>
+  <select id="rel" title="在聊谁"><option value="">— 选择对象 —</option></select>
+  <button id="newrel" class="icon" title="新建一个对象">＋</button>
+  <button id="gear" class="icon" title="设置访问令牌">⚙</button>
+</header>
+
+<div id="banner" hidden></div>
+<div id="log"><div class="wrap" id="wrap"></div></div>
+
+<footer>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="说点什么，或问一句…（Ctrl/⌘ + Enter 发送）"></textarea>
+    <label class="icon" title="发截图给它读" style="border:1px solid var(--line);border-radius:9px;background:var(--raise);cursor:pointer">
+      📎<input type="file" id="file" accept="image/*" multiple hidden>
+    </label>
+    <button id="send">发送</button>
+  </div>
+</footer>
+
+<dialog id="settings">
+  <h3>访问令牌</h3>
+  <p>Bearer token，只存在这台浏览器的 localStorage 里，不会发给除本机 API 以外的任何地方。</p>
+  <input id="token" type="password" placeholder="sk-sonder-…" autocomplete="off">
+  <div class="row" style="justify-content:flex-end">
+    <button id="clear">清除</button>
+    <button id="save">保存</button>
+  </div>
+</dialog>
+
+<!--autologin-->
+<dialog id="newrel-dlg">
+  <h3>新建对象</h3>
+  <p>给这个人单独建一份档案 —— 和其他人的数据完全隔离，不会互相污染。</p>
+  <input id="newrel-name" placeholder="怎么称呼（化名就行）" autocomplete="off" maxlength="80">
+  <p style="margin-bottom:6px">
+    保留天数。第三方档案必须有过期时间（这是 schema 强制的，不是可选项），
+    到期后会被残留清理任务扫出来，届时可以删除或续期。
+  </p>
+  <input id="newrel-days" type="number" min="1" max="3650" value="365">
+  <div class="row" style="justify-content:flex-end">
+    <button id="newrel-cancel">取消</button>
+    <button id="newrel-save">创建</button>
+  </div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const wrap = $('wrap');
+// A token saved by hand wins, so an explicit choice is never silently
+// overridden. Otherwise use the one the server injected, which it only does
+// for loopback clients. "清除" in ⚙ drops the saved one and falls back here.
+const injected = window.__SONDER_TOKEN__ || '';
+let token = localStorage.getItem('sonder_token') || injected;
+let relId = localStorage.getItem('sonder_rel') || '';
+// Kept separate from the <select> so "no relationships exist" and "none
+// selected yet" cannot be confused. They were confused: the first version
+// read the select's value, which is '' whenever the placeholder is showing,
+// and told a user with a working relationship to go and create one.
+let relCount = 0;
+
+// Every element built here carries model output, so text goes in through
+// textContent. Nothing in this page uses innerHTML.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+// Everything the card says is rendered by the server, from the same function
+// the two chat channels use. The page used to keep its own copies of the
+// objective and tone label maps, which is how three surfaces start saying
+// three slightly different things about the same suggestion.
+function bubble(cls, text) { const n = el('div', 'msg ' + cls, text); wrap.appendChild(n); scroll(); return n; }
+function scroll() { const l = $('log'); l.scrollTop = l.scrollHeight; }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token },
+  });
+  if (r.status === 401) throw new Error('令牌无效或已撤销 — 点右上角 ⚙ 重新填一个');
+  if (!r.ok) {
+    let detail = 'HTTP ' + r.status;
+    try { const j = await r.json(); if (j.detail) detail = j.detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function warn(text) {
+  const b = $('banner');
+  b.textContent = text;
+  b.hidden = !text;
+}
+
+async function loadRelationships() {
+  const sel = $('rel');
+  if (!token) {
+    relCount = 0;
+    sel.innerHTML = '';
+    sel.appendChild(new Option('— 先设置令牌 —', ''));
+    return;
+  }
+  try {
+    const list = await api('/relationships');
+    relCount = list.length;
+    sel.innerHTML = '';
+    if (!list.length) {
+      sel.appendChild(new Option('— 还没有对象 —', ''));
+      return;
+    }
+    sel.appendChild(new Option('— 选择对象 —', ''));
+    for (const r of list) sel.appendChild(new Option(r.display_name || '(未命名)', r.id));
+    if (relId && list.some(r => r.id === relId)) {
+      sel.value = relId;                       // 上次选的那个还在
+    } else if (list.length === 1) {
+      relId = list[0].id;                      // 只有一个，就别让人再点一次
+      localStorage.setItem('sonder_rel', relId);
+      sel.value = relId;
+    }
+  } catch (e) {
+    relCount = 0;
+    sel.innerHTML = '';
+    sel.appendChild(new Option('— 读取失败 —', ''));
+    bubble('sys', e.message);
+  }
+}
+
+function renderSuggestions(d) {
+  const card = el('div', 'card');
+  const head = d.suggestions[0];
+
+  if (head) {
+    // The sentence first, everything else behind a disclosure. This card used
+    // to lead with the objective and the rationale, which measured 307
+    // characters of which 15 were the thing the user came for -- a wall to
+    // read past before copying the one line they wanted.
+    card.appendChild(el('div', 'say', head.text));
+
+    if (d.detail) {
+      // <details> rather than a click handler: the disclosure is the browser's
+      // job, and it still works with the keyboard and with a screen reader.
+      const why = document.createElement('details');
+      why.appendChild(el('summary', 'why', '为什么'));
+      why.appendChild(el('div', 'meta', d.detail));
+      card.appendChild(why);
+    }
+
+    if (head.strategy_id) {
+      const row = el('div', 'row');
+      for (const [label, action] of [['发出去了', 'sent_verbatim'], ['改了再发', 'sent_edited'], ['没发', 'discarded']]) {
+        const b = el('button', null, label);
+        b.onclick = async () => {
+          b.disabled = true;
+          try {
+            await api('/strategy/action', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ relationship_id: relId, strategy_id: head.strategy_id, action }),
+            });
+            card.querySelectorAll('button').forEach(x => x.disabled = true);
+            card.appendChild(el('div', 'meta', '已记录：' + label));
+          } catch (e) { b.disabled = false; bubble('sys', e.message); }
+        };
+        row.appendChild(b);
+      }
+      card.appendChild(row);
+    }
+  } else {
+    card.appendChild(el('div', 'sys', '这次没有可以发的建议。'));
+    for (const n of (d.notes || [])) card.appendChild(el('div', 'meta', n));
+  }
+
+  wrap.appendChild(card);
+  if (d.health_warning) bubble('sys', '⚠ ' + d.health_warning);
+  scroll();
+}
+
+async function send() {
+  const box = $('input');
+  const text = box.value.trim();
+  if (!text) return;
+  if (!token) return openSettings();
+  if (!relId) return bubble('sys', '先在顶部选一个对象。');
+
+  bubble('me', text);
+  box.value = ''; box.style.height = 'auto';
+  $('send').disabled = true;
+  const pending = bubble('sys', '思考中…');
+  pending.classList.add('spin');
+
+  try {
+    const d = await api('/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ relationship_id: relId, text }),
+    });
+    pending.remove();
+    if (d.kind === 'answer') bubble('sys', d.text);
+    else if (d.kind === 'briefing') bubble('sys', d.text);
+    else renderSuggestions(d);
+  } catch (e) {
+    pending.remove();
+    bubble('sys', e.message);
+  } finally {
+    $('send').disabled = false;
+  }
+}
+
+async function upload(files) {
+  if (!token) return openSettings();
+  if (!relId) return bubble('sys', '先在顶部选一个对象。');
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  bubble('me', '［' + files.length + ' 张截图］');
+  const pending = bubble('sys', '上传中…');
+  try {
+    const q = new URLSearchParams({ relationship_id: relId, channel: 'wechat' });
+    const d = await api('/ingest?' + q, { method: 'POST', body: fd });
+    pending.remove();
+    bubble('sys', '收到 ' + d.queued + ' 张，正在解析。' +
+      '\n图像本身会在一天内删除，只保留抽取出的对话。' +
+      '\n完成后回一句「分析一下」就能看到状态。');
+  } catch (e) { pending.remove(); bubble('sys', e.message); }
+}
+
+function openSettings() { $('token').value = token; $('settings').showModal(); }
+
+$('send').onclick = send;
+$('gear').onclick = openSettings;
+$('newrel').onclick = () => {
+  $('newrel-name').value = '';
+  $('newrel-days').value = 365;
+  $('newrel-dlg').showModal();
+};
+$('newrel-cancel').onclick = () => $('newrel-dlg').close();
+$('newrel-save').onclick = async () => {
+  const name = $('newrel-name').value.trim();
+  if (!name) return;
+  const days = Math.max(1, Math.min(3650, parseInt($('newrel-days').value, 10) || 365));
+  const btn = $('newrel-save');
+  btn.disabled = true;
+  try {
+    const r = await api('/relationships', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: name, retention_days: days }),
+    });
+    $('newrel-dlg').close();
+    relId = r.id;
+    localStorage.setItem('sonder_rel', relId);
+    await loadRelationships();
+    bubble('sys', '已建好「' + (r.display_name || name) + '」。可以开始聊了。');
+  } catch (e) {
+    bubble('sys', '创建失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+$('rel').onchange = e => { relId = e.target.value; localStorage.setItem('sonder_rel', relId); };
+$('file').onchange = e => { if (e.target.files.length) upload([...e.target.files]); e.target.value = ''; };
+$('save').onclick = async () => {
+  token = $('token').value.trim();
+  localStorage.setItem('sonder_token', token);
+  $('settings').close();
+  await loadRelationships();
+};
+$('clear').onclick = () => {
+  token = ''; localStorage.removeItem('sonder_token');
+  $('settings').close(); loadRelationships();
+};
+$('input').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+});
+$('input').addEventListener('input', e => {
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(e.target.scrollHeight, 190) + 'px';
+});
+
+(async function init() {
+  if (injected && !localStorage.getItem('sonder_token')) {
+    $('gear').title = '已由服务端自动登录（令牌只对本机回环注入）';
+  }
+  await loadRelationships();
+  const who = injected && !localStorage.getItem('sonder_token') ? '已自动登录。\n\n' : '';
+  if (!token) {
+    bubble('sys', '还没有设置访问令牌。点右上角 ⚙ 填入 bearer token。');
+  } else if (relCount === 0) {
+    bubble('sys', who + '还没有任何对象。点顶部 ＋ 新建一个就行，不用去命令行。');
+  } else if (!$('rel').value) {
+    bubble('sys', who + '顶部有 ' + relCount + ' 个对象，先选一个再说话。');
+  } else {
+    bubble('sys', who + '直接说话就行 —— 把她刚说的话贴进来，它给你可以回的几句；' +
+      '问一句，它给你分析。\n\n' +
+      '也可以问「你知道她什么」，看它现在到底攒下了什么。');
+  }
+})();
+</script>
+</body>
+</html>

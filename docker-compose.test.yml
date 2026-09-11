@@ -11,6 +11,7 @@ services:
       SONDER_TEST_ERASURE_DB_PASSWORD: ${SONDER_TEST_ERASURE_DB_PASSWORD:?set SONDER_TEST_ERASURE_DB_PASSWORD}
       SONDER_TEST_WORKER_DB_PASSWORD: ${SONDER_TEST_WORKER_DB_PASSWORD:?set SONDER_TEST_WORKER_DB_PASSWORD}
       SONDER_TEST_BOT_DB_PASSWORD: ${SONDER_TEST_BOT_DB_PASSWORD:?set SONDER_TEST_BOT_DB_PASSWORD}
+      SONDER_TEST_WECHAT_DB_PASSWORD: ${SONDER_TEST_WECHAT_DB_PASSWORD:?set SONDER_TEST_WECHAT_DB_PASSWORD}
     ports:
       - "127.0.0.1:55432:5432"
     tmpfs:
@@ -22,9 +23,12 @@ services:
       - ./migrations/004_integrity_and_idempotency.sql:/docker-entrypoint-initdb.d/04-integrity.sql:ro
       - ./migrations/005_vault_scope_and_version_keys.sql:/docker-entrypoint-initdb.d/05-vault.sql:ro
       - ./migrations/006_vault_ownership_and_cleanup.sql:/docker-entrypoint-initdb.d/06-vault-ownership.sql:ro
-      # Last: the migrations create the service roles without a password, so
-      # the suite has to give them one before it can connect as them.
-      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/07-roles.sql:ro
+      - ./migrations/007_wechat_channel.sql:/docker-entrypoint-initdb.d/07-wechat.sql:ro
+      # Last, and numbered last deliberately: these run in filename order, and
+      # this script assigns a password to `sonder_wechat`, which exists only
+      # once 007 has created it. `07-roles.sql` would sort *before*
+      # `07-wechat.sql` (r < w), so the roles script has to be 08.
+      - ./tests/sql/roles.sql:/docker-entrypoint-initdb.d/08-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sonder -d sonder_test"]
       interval: 2s

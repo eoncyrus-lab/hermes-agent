@@ -170,7 +170,9 @@ def test_cold_start_predicts_the_base_rate_and_says_so():
     p = plan(AgentContext(scope=Scope(UID, RID)))
     assert p.predicted_positive == 0.5
     assert p.exploration
-    assert "base rate" in p.prediction_basis or "not enough" in p.prediction_basis
+    # The basis is recorded, and read by whoever calibrates later, so it is
+    # asserted as written rather than by keyword.
+    assert "基础概率" in p.prediction_basis or "不足以预测" in p.prediction_basis
 
 
 # --------------------------------------------------------------- humanizer
@@ -343,7 +345,9 @@ def test_health_warning_is_unprompted():
         }
     )
     warning = health_warning(st)
-    assert warning and "pressure" in warning
+    # Asserted as written: this is the text that has to survive being
+    # pasted into a chat window.
+    assert warning and "你给的压力" in warning
     assert health_warning(SimpleNamespace(health={})) is None
 
 

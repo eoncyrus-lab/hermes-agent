@@ -80,9 +80,27 @@ class OpenAICompatProvider(LLMProvider):
             or getattr(choice.message, "refusal", None) is not None
         ):
             raise ContentPolicyRefusal("OpenAI response was blocked by content policy")
+
+        text = choice.message.content or ""
+        # An empty text is not always a bug, but this particular empty text is,
+        # and its two failure modes are both bad: `structured()` reports it as
+        # "no JSON object in response: ''", which names the symptom and not the
+        # cause, while a plain `complete()` caller sees a successful call that
+        # returned nothing. The humanizer's fallback then restores the original
+        # draft, so the rewrite silently never happened. Raising here turns
+        # both into one error that says what to change.
+        if not text.strip() and choice.finish_reason == "length":
+            raise ProviderError(
+                f"provider '{self.name}' returned no text: the completion was "
+                f"truncated at max_tokens={max_tokens} before any output was "
+                "emitted. A reasoning model spends that budget on its "
+                "reasoning first, so raise max_tokens or route this task to a "
+                "non-reasoning model."
+            )
+
         usage = resp.usage
         return Completion(
-            text=choice.message.content or "",
+            text=text,
             model=resp.model,
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,

@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import select, update
 
 from .api.auth import mint_token
@@ -159,6 +161,164 @@ async def _telegram_link(user_id: UUID, telegram_id: int) -> int:
             return EXIT_NOT_FOUND
         session.add(TelegramAccountRow(telegram_user_id=telegram_id, user_id=user_id))
     print(f"Linked Telegram {telegram_id} to {user_id}.")
+    return EXIT_OK
+
+
+async def _credentials_set(
+    user_id: UUID,
+    provider: str,
+    profile: str,
+    base_url: str | None,
+    model: str | None,
+    intimate: bool,
+) -> int:
+    """Store a model credential for one account.
+
+    The key is read from the terminal rather than taken as an argument: argv
+    is in the shell history and in `ps` for every user on the box.
+    """
+    import getpass
+
+    from .llm import user_credentials
+    from .llm.configuration import PROFILES
+
+    if not await _user_exists(user_id):
+        print(f"No such user: {user_id}")
+        return EXIT_NOT_FOUND
+    if profile not in PROFILES:
+        print(f"Unknown profile '{profile}'. Known: {', '.join(sorted(PROFILES))}")
+        return EXIT_CONFIG
+
+    api_key = getpass.getpass(f"API key for {provider} (not echoed): ").strip()
+    if not api_key:
+        print("Empty key; nothing written.")
+        return EXIT_CONFIG
+
+    async with maintenance_session() as session:
+        await user_credentials.save(
+            session,
+            user_id,
+            provider=provider,
+            profile=profile,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            purpose=user_credentials.INTIMATE if intimate else user_credentials.GENERAL,
+        )
+        refused = []
+        if not intimate:
+            from .config import settings
+
+            refused = sorted(
+                user_credentials.safety_provider_names(settings().llm_routes) & {provider}
+            )
+    print(f"Stored '{provider}' ({profile}) for {user_id}.")
+    if refused:
+        # Said plainly rather than discovered later: their key is real, and
+        # the deployment's own chains keep using the operator's for this name.
+        print(
+            f"Note: '{provider}' serves EXTRACT or CRITIC in this deployment, so "
+            "the operator's credential keeps that route. Yours is used for "
+            "everything else."
+        )
+    return EXIT_OK
+
+
+async def _credentials_list(user_id: UUID) -> int:
+    from .llm import user_credentials
+
+    if not await _user_exists(user_id):
+        print(f"No such user: {user_id}")
+        return EXIT_NOT_FOUND
+    async with maintenance_session() as session:
+        rows = await user_credentials.describe_for(session, user_id)
+    if not rows:
+        print("No credentials of their own; requests use the deployment's.")
+        return EXIT_OK
+    for row in rows:
+        where = row["base_url"] or "(profile default)"
+        model = row["model"] or "(route chain)"
+        print(
+            f"{row['provider']}\t{row['profile']}\t{row['purpose']}\t"
+            f"{model}\t{where}\t{row['key_version']}"
+        )
+    return EXIT_OK
+
+
+async def _credentials_clear(user_id: UUID, provider: str) -> int:
+    from .llm import user_credentials
+
+    async with maintenance_session() as session:
+        removed = await user_credentials.remove(session, user_id, provider)
+    if not removed:
+        print(f"No credential named '{provider}' for {user_id}.")
+        return EXIT_NOT_FOUND
+    print(f"Removed '{provider}'.")
+    return EXIT_OK
+
+
+async def _wechat_link(user_id: UUID, wechat_id: str) -> int:
+    """Bind a WeChat handle to a Sonder account.
+
+    The handle is not something a person can read off their own screen, so the
+    channel prints it back to them when it does not recognise them -- that
+    message is the whole discovery mechanism, and this is the other half of
+    it. Without this command the bot can only ever say "not linked".
+    """
+    from .storage.models import WechatAccountRow
+
+    if not await _user_exists(user_id):
+        print(f"No such user: {user_id}")
+        return EXIT_NOT_FOUND
+    async with maintenance_session() as session:
+        existing = await session.get(WechatAccountRow, wechat_id)
+        if existing is not None:
+            if existing.user_id == user_id:
+                print(f"Already linked to {user_id}.")
+                return EXIT_OK
+            print(
+                f"WeChat {wechat_id} is already linked to another account "
+                f"({existing.user_id}). Unlink it first."
+            )
+            return EXIT_NOT_FOUND
+        session.add(WechatAccountRow(wechat_user_id=wechat_id, user_id=user_id))
+    print(f"Linked WeChat {wechat_id} to {user_id}.")
+    return EXIT_OK
+
+
+async def _wechat_unlink(wechat_id: str) -> int:
+    from .storage.models import WechatAccountRow
+
+    async with maintenance_session() as session:
+        existing = await session.get(WechatAccountRow, wechat_id)
+        if existing is None:
+            print(f"WeChat {wechat_id} is not linked.")
+            return EXIT_NOT_FOUND
+        await session.delete(existing)
+    print(f"Unlinked {wechat_id}.")
+    return EXIT_OK
+
+
+async def _wechat_list() -> int:
+    from .storage.models import WechatAccountRow
+
+    async with maintenance_session() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(WechatAccountRow).order_by(
+                        WechatAccountRow.linked_at, WechatAccountRow.wechat_user_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not rows:
+        print("No linked WeChat accounts.")
+        return EXIT_OK
+    for row in rows:
+        print(f"{row.wechat_user_id}\t{row.user_id}\tlinked={row.linked_at.isoformat()}")
     return EXIT_OK
 
 
@@ -520,11 +680,140 @@ def _parser() -> argparse.ArgumentParser:
         default=Track.STANDARD.value,
     )
     llm_commands.add_parser("smoke-local", help="smoke the legacy local route")
+
+    creds = groups.add_parser("credentials", help="a user's own model keys")
+    cred_commands = creds.add_subparsers(dest="command", required=True)
+    cred_set = cred_commands.add_parser("set", help="store one (prompts for the key)")
+    cred_set.add_argument("--user", required=True, type=_uuid)
+    cred_set.add_argument("--provider", required=True, help="name a route chain uses")
+    cred_set.add_argument("--profile", required=True, help="protocol/endpoint preset")
+    cred_set.add_argument("--base-url", default=None)
+    cred_set.add_argument("--model", default=None)
+    cred_set.add_argument(
+        "--intimate",
+        action="store_true",
+        help="send this user's intimate track here (a self-hosted model)",
+    )
+    cred_list = cred_commands.add_parser("list", help="what they have, never the key")
+    cred_list.add_argument("--user", required=True, type=_uuid)
+    cred_clear = cred_commands.add_parser("clear")
+    cred_clear.add_argument("--user", required=True, type=_uuid)
+    cred_clear.add_argument("--provider", required=True)
+
+    wechat = groups.add_parser("wechat", help="pair the WeChat bot channel")
+    wechat_commands = wechat.add_subparsers(dest="command", required=True)
+    wechat_login = wechat_commands.add_parser(
+        "login", help="show a QR code and store the token it returns"
+    )
+    wechat_login.add_argument(
+        "--timeout",
+        type=float,
+        default=480.0,
+        help="seconds to wait for the scan; default 480",
+    )
+    wechat_login.add_argument(
+        "--env",
+        default=None,
+        help="path to the .env to update; default is the repository root",
+    )
+    wechat_login.add_argument(
+        "--open",
+        action="store_true",
+        dest="open_image",
+        help="open the QR image, when the terminal's own drawing will not scan",
+    )
+    wechat_commands.add_parser("status", help="report whether a bot is paired")
+    wechat_link = wechat_commands.add_parser(
+        "link", help="bind a WeChat handle to an account"
+    )
+    wechat_link.add_argument("--user", required=True, type=_uuid)
+    wechat_link.add_argument(
+        "--wechat-id",
+        required=True,
+        help="the handle the bot printed back, like o9cq...@im.wechat",
+    )
+    wechat_unlink = wechat_commands.add_parser("unlink")
+    wechat_unlink.add_argument("--wechat-id", required=True)
+    wechat_commands.add_parser("list", help="list linked WeChat accounts")
     return parser
 
 
+async def _wechat_login(timeout: float, env: str | None, open_image: bool) -> int:
+    """Pair a WeChat bot and store the token, or explain why it did not."""
+    import webbrowser
+
+    from .config import REPO_ROOT
+    from .wechat.client import ILinkError, ILinkLoginTimeout
+    from .wechat.login import BOT_TOKEN_KEY, run_login
+
+    env_path = Path(env) if env else REPO_ROOT / ".env"
+    # Written next to the cursor rather than into the repository root: it is a
+    # live capability for the couple of minutes it lasts, and `storage/` is
+    # already ignored.
+    image_path = REPO_ROOT / "storage" / "wechat-login-qr.svg"
+
+    try:
+        result = await run_login(
+            env_path,
+            timeout=timeout,
+            image_path=image_path,
+            opener=(lambda p: webbrowser.open(p.resolve().as_uri()))
+            if open_image
+            else None,
+        )
+    except ILinkLoginTimeout:
+        print("Timed out waiting for the scan. Run it again for a fresh code.")
+        return EXIT_SERVICE
+    except ILinkError as exc:
+        print(f"Pairing failed: {exc}")
+        return EXIT_SERVICE
+
+    print(f"Paired. {BOT_TOKEN_KEY} written to {env_path}.")
+    print(f"bot_id={result.bot_id} base_url={result.base_url}")
+    print("Restart the WeChat channel to pick it up.")
+    return EXIT_OK
+
+
+async def _wechat_status() -> int:
+    """Whether a bot is paired. Never prints the token, not even part of it."""
+    token = settings().wechat_bot_token
+    if not token:
+        print("No WeChat bot paired. Run: sonder wechat login")
+        return EXIT_CONFIG
+    base = settings().wechat_base_url or "(default endpoint)"
+    print(f"paired: token set ({len(token)} chars), base_url={base}")
+    return EXIT_OK
+
+
 def main() -> None:
-    args = _parser().parse_args()
+    parser = _parser()
+    args = parser.parse_args()
+    try:
+        code = _dispatch(parser, args)
+    except ValidationError as exc:
+        # A raw pydantic traceback is the least useful way to say "you are
+        # missing an environment variable", and it is what an operator gets
+        # for forgetting `SONDER_DATABASE_URL` -- the one thing every command
+        # except `wechat login` needs and nothing prompts them for.
+        missing = sorted(
+            str(err["loc"][0]).upper()
+            for err in exc.errors()
+            if err.get("type") == "missing" and err.get("loc")
+        )
+        if missing:
+            print(
+                "Missing configuration: "
+                + ", ".join(f"SONDER_{name}" for name in missing)
+                + "\nSet it, or run through scripts/run-local.sh, which "
+                "assembles the DSNs from .env."
+            )
+        else:
+            print(f"Invalid configuration: {exc}")
+        raise SystemExit(EXIT_CONFIG) from None
+    raise SystemExit(code)
+
+
+def _dispatch(parser, args) -> int:
     if args.group == "relationship" and args.command == "create":
         code = asyncio.run(
             _relationship_create(args.user, args.name, args.retention_days)
@@ -553,9 +842,39 @@ def main() -> None:
         code = asyncio.run(_llm_smoke(args.name, args.model))
     elif args.group == "llm" and args.command == "smoke" and args.target == "route":
         code = asyncio.run(_llm_smoke_route(args.task, args.track))
-    else:
+    elif args.group == "llm" and args.command == "smoke-local":
         code = asyncio.run(_llm_smoke(None, None))
-    raise SystemExit(code)
+    elif args.group == "credentials" and args.command == "set":
+        code = asyncio.run(
+            _credentials_set(
+                args.user,
+                args.provider,
+                args.profile,
+                args.base_url,
+                args.model,
+                args.intimate,
+            )
+        )
+    elif args.group == "credentials" and args.command == "list":
+        code = asyncio.run(_credentials_list(args.user))
+    elif args.group == "credentials" and args.command == "clear":
+        code = asyncio.run(_credentials_clear(args.user, args.provider))
+    elif args.group == "wechat" and args.command == "login":
+        code = asyncio.run(_wechat_login(args.timeout, args.env, args.open_image))
+    elif args.group == "wechat" and args.command == "status":
+        code = asyncio.run(_wechat_status())
+    elif args.group == "wechat" and args.command == "link":
+        code = asyncio.run(_wechat_link(args.user, args.wechat_id))
+    elif args.group == "wechat" and args.command == "unlink":
+        code = asyncio.run(_wechat_unlink(args.wechat_id))
+    elif args.group == "wechat" and args.command == "list":
+        code = asyncio.run(_wechat_list())
+    else:
+        # Reachable only when a subcommand is added to `_parser` and not here.
+        # This used to fall through to a local-provider smoke test, so a new
+        # command silently did the wrong thing instead of failing loudly.
+        parser.error(f"unhandled command: {args.group} {args.command}")
+    return code
 
 
 if __name__ == "__main__":

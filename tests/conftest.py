@@ -168,3 +168,48 @@ def superuser():
             await engine.dispose()
 
     return _run
+
+
+@pytest.fixture(autouse=True)
+def _never_write_channel_state(monkeypatch, tmp_path):
+    """Keep per-chat state out of the repository.
+
+    `sonder.channels.Selection` defaults to `storage/chat-selection.json`, and
+    the channel modules build one at import. Without this, any test that
+    exercises selection writes real chat ids into the working tree -- and the
+    running bot then loads them on its next start, which is how this was
+    noticed: `storage/chat-selection.json` contained test fixtures.
+    """
+    from sonder import channels
+
+    monkeypatch.setattr(channels, "SELECTION_FILE", tmp_path / "chat-selection.json")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_queue(monkeypatch):
+    """Keep tests out of the worker's broker.
+
+    The DB suite runs against its own throwaway Postgres, but there is no
+    throwaway Redis -- an unstubbed enqueue lands in the development broker,
+    where a running worker picks it up. Every job it received so far was a
+    no-op that resolved to `no such relationship`, which is how this was
+    noticed: the worker log was full of random relationship ids at the times
+    the suite had been running.
+
+    Returning a fake id rather than raising, so a test that asserts enqueueing
+    still can; one that wants to inspect the arguments can patch over this.
+    """
+    from sonder.api import main as api_main
+    from sonder.api import queue
+    from sonder.wechat import runner as wechat_runner
+
+    async def _record_job(job, *args):
+        return f"test-job:{job}"
+
+    async def _record_text(_user_id, _relationship_id, _text):
+        return True
+
+    monkeypatch.setattr(queue, "enqueue", _record_job)
+    monkeypatch.setattr(api_main, "enqueue_job", _record_job)
+    monkeypatch.setattr(api_main, "enqueue_text_ingest", _record_text)
+    monkeypatch.setattr(wechat_runner, "enqueue_job", _record_job)

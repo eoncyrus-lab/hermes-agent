@@ -17,6 +17,7 @@ either slow or shallow, depending on which shape won.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from uuid import UUID
@@ -157,29 +158,66 @@ def route_request(text: str) -> RoutedRequest:
 
 
 def health_warning(state_row) -> str | None:
-    """Surfaced unprompted. The user did not ask, and that is the point."""
+    """Surfaced unprompted. The user did not ask, and that is the point.
+
+    The strings are Chinese while this file's prose is English: they are read
+    by the person being advised, and the product is used in Chinese. There is
+    no i18n layer because there is one language -- inventing one for a single
+    locale would be more machinery than it replaces.
+    """
     if state_row is None:
         return None
     health = state_row.health or {}
     msgs = []
     for axis, label in (
-        ("emotional_safety", "she may not feel safe in this exchange"),
-        ("mutual_respect", "the respect in this is one-directional"),
-        ("autonomy_preserved", "she has little room to say no here"),
+        ("emotional_safety", "她在这段交流里可能并不觉得安全"),
+        ("mutual_respect", "这里面的尊重是单向的"),
+        ("autonomy_preserved", "她在这里几乎没有说不的余地"),
     ):
         a = health.get(axis)
         if a and a.get("value", 1) < 0.55 and a.get("confidence", 0) >= 0.35:
             msgs.append(label)
     p = health.get("pressure_exerted_by_self")
     if p and p.get("value", 0) > 0.35 and p.get("confidence", 0) >= 0.35:
-        msgs.append("you are applying more pressure than you probably intend")
+        msgs.append("你给的压力可能比你以为的大")
     if not msgs:
         return None
     return (
-        "Before the suggestions: " + "; ".join(msgs) + ". "
-        "This reading is uncertain, but it is the kind of thing worth being "
-        "wrong about in the cautious direction."
+        "先说一句："
+        + "；".join(msgs)
+        + "。\n这个判断本身不确定，但这类事情宁可谨慎一点。"
     )
+
+
+async def _bind_user_llm(session, scope: Scope) -> None:
+    """Make this user's own model credentials active for what follows.
+
+    Gated on the identity claim rather than on a flag: a queued worker job
+    builds a `Scope` with no claim, and the worker must keep running on the
+    deployment's own providers. That is not incidental -- extraction is a
+    safety task, and a job that picked up a user's endpoint would be exactly
+    the route the credential rules exist to prevent.
+
+    A user with no credentials of their own changes nothing, which is the
+    common case and costs one query.
+    """
+    if not scope.identity_claim:
+        return
+    # Imported from the module, not the package: `sonder.llm` re-exports the
+    # `router` *function*, so `from ..llm import router` binds that instead of
+    # the module and activation would raise AttributeError the first time a
+    # user with credentials made a request.
+    from ..llm.router import activate_user
+    from ..llm.user_credentials import load_for
+
+    credentials = await load_for(session, scope.user_id)
+    if not credentials:
+        return
+    refused = activate_user(scope.user_id, credentials)
+    if refused:
+        # Their key is real but unused, and silence would leave them
+        # debugging a route that is doing what it was told.
+        log.warning("user_provider_not_applied", providers=refused)
 
 
 async def reply(
@@ -188,15 +226,25 @@ async def reply(
     user_id: UUID,
     *,
     track: Track = Track.STANDARD,
+    fresh: Sequence[ctx_mod.FreshTurn] = (),
 ) -> ReplyResult:
-    """Hot path. No skills loaded, no agent loop."""
-    ctx = await ctx_mod.build(session, scope)
+    """Hot path. No skills loaded, no agent loop.
+
+    `fresh` is the text the caller handed over with this request. Until this
+    parameter existed the hot path read the conversation exclusively from
+    `interactions.last_messages`, so a request carrying the conversation --
+    which is every request the browser page and the bot actually send --
+    reached the generator as `CONVERSATION: (none)` and was answered with
+    generic small talk. The text was parsed for its track and then dropped.
+    """
+    await _bind_user_llm(session, scope)
+    ctx = await ctx_mod.build(session, scope, fresh_turns=fresh)
     p = make_plan(ctx)
     warning = health_warning(ctx.state_row)
 
     candidates = await generator.generate(ctx, p, track=track)
     if not candidates:
-        return ReplyResult([], p, warning, notes=["generator returned nothing"])
+        return ReplyResult([], p, warning, notes=["没有生成出任何候选"])
 
     voice_block = ctx.render_voice()
     avoid = list((ctx.voice or {}).get("avoided_constructions", []))
@@ -262,10 +310,7 @@ async def reply(
 
     notes = []
     if p.exploration:
-        notes.append(
-            "This is an exploratory move -- there is not enough history with "
-            "her for the prediction to mean much yet."
-        )
+        notes.append("这是一步试探——跟她之间的历史还太少，预测暂时说明不了什么。")
     return ReplyResult(suggestions, p, warning, rejected, notes)
 
 
@@ -312,6 +357,7 @@ async def analyze(
 ) -> str:
     """Slow path. Skills loaded, reasoning allowed to take its time."""
     track = track or intent.track
+    await _bind_user_llm(session, scope)
     ctx = await ctx_mod.build(session, scope)
     skill_intent = Intent.INTIMACY.value if track is Track.INTIMATE else intent.value
     picked = skills.select(skill_intent)
@@ -327,17 +373,45 @@ async def analyze(
         [Msg(role="user", content=f"{ctx.render()}\n\nQUESTION: {question}")],
         track=track,
         system=f"{frame}\n\n{skill_block}",
-        max_tokens=2000,
+        # This is the slow path, and the one task this deployment routes to a
+        # model that reasons. There, `max_tokens` covers the reasoning as well
+        # as the answer -- so a budget sized for output alone, which is what
+        # 2000 was and what an Anthropic model would have taken it to mean,
+        # gets spent before a single character is emitted. It worked on short
+        # questions and returned nothing on long ones, which is the worst way
+        # for a limit to behave: the caller gets an empty string, not an error.
+        max_tokens=8000,
         temperature=0.7,
     )
     warning = health_warning(ctx.state_row)
     return f"{warning}\n\n{out.text}" if warning else out.text
 
 
+def handed_over(request: RoutedRequest) -> list[ctx_mod.FreshTurn]:
+    """The caller's own words, as context for the reply they asked for.
+
+    One block, not parsed into turns: a pasted conversation has no reliable
+    speaker structure, and guessing one would put words in someone's mouth
+    inside the very prompt that decides what to say to them. The label the
+    renderer gives it is deliberately neutral, because this text is sometimes
+    the conversation ("她说：在忙吗") and sometimes an instruction ("帮我回一
+    句") -- and the generator is better off seeing which than not seeing it at
+    all, which is what happened before.
+    """
+    body = request.text.strip()
+    return [ctx_mod.FreshTurn(body=body)] if body else []
+
+
 async def handle(session, scope: Scope, user_id: UUID, text: str):
     request = route_request(text)
     if request.intent.is_hot:
-        return await reply(session, scope, user_id, track=request.track)
+        return await reply(
+            session,
+            scope,
+            user_id,
+            track=request.track,
+            fresh=handed_over(request),
+        )
     return await analyze(
         session,
         scope,

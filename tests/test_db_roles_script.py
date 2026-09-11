@@ -50,6 +50,7 @@ else:
         "SONDER_WORKER_DB_PASSWORD",
         "SONDER_MAINT_DB_PASSWORD",
         "SONDER_BOT_DB_PASSWORD",
+        "SONDER_WECHAT_DB_PASSWORD",
     )
     passwords = {
         name: f"quote' and !@#$%^&*()[]{{}}:;,.?/{index}"

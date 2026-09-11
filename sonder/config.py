@@ -130,6 +130,20 @@ class Settings(BaseSettings):
     artifact_ttl_hours: int = 24
     request_timeout_s: float = 90.0
     telegram_token: str | None = None
+    # A bearer token for the browser page, served into `/ui` for loopback
+    # clients only. This exists because the API deliberately cannot mint one:
+    # `api_tokens` is granted to `sonder_maint` alone, and the API is not given
+    # that DSN, so "auto-login" can only mean handing over a token an operator
+    # provisioned. Unset disables the feature and leaves `/ui` asking for a
+    # token by hand.
+    ui_token: str | None = None
+    # The WeChat bot credential, written by `sonder wechat login` after a QR
+    # pairing. It can send messages as the bot, so it lives beside
+    # `telegram_token` rather than in the vault: `vault_records` is for
+    # sensitive material about a person, is scoped by relationship, and is not
+    # readable by the application role at all.
+    wechat_bot_token: str | None = None
+    wechat_base_url: str | None = None
     log_level: str = "INFO"
 
     @field_validator("safety_trusted_providers", mode="before")

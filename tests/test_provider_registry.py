@@ -17,6 +17,13 @@ from sonder.llm.provider import ProviderError
 from sonder.llm.router import Router, UnsafeRouting
 
 VENDORS = ["minimax", "deepseek", "openrouter", "zen"]
+
+# DeepSeek is deliberately safety-trusted in this deployment; see the note in
+# `sonder.llm.configuration.PROFILES`. Everything below that asserts a vendor
+# CANNOT reach EXTRACT or CRITIC is therefore parameterised over the vendors
+# that are still permissive, so the guard keeps being tested against a real
+# subject instead of being deleted along with its only example.
+PERMISSIVE_VENDORS = ["minimax", "openrouter", "zen"]
 TEST_DATABASE_URL = "postgresql+asyncpg://app:test@db/sonder"
 
 
@@ -52,13 +59,13 @@ def test_all_four_vendor_slots_can_coexist():
     assert set(VENDORS).issubset(r.providers)
 
 
-@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("vendor", PERMISSIVE_VENDORS)
 def test_every_third_party_vendor_is_permissive(vendor):
     r = Router(_cfg(**{f"{vendor}_api_key": "test"}))
     assert r.providers[vendor] is True, f"{vendor} was treated as safety-trusted"
 
 
-@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("vendor", PERMISSIVE_VENDORS)
 @pytest.mark.parametrize("task", ["extract", "critic"])
 def test_safety_critical_work_cannot_be_routed_to_a_vendor(vendor, task):
     cfg = _cfg(
@@ -69,7 +76,7 @@ def test_safety_critical_work_cannot_be_routed_to_a_vendor(vendor, task):
         Router(cfg).resolve(Task(task), Track.STANDARD)
 
 
-@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("vendor", PERMISSIVE_VENDORS)
 def test_a_vendor_cannot_be_a_safety_critical_failover_hop(vendor):
     """A guard break anywhere in the chain is an error, not a hop to skip."""
     cfg = _cfg(
@@ -83,6 +90,34 @@ def test_a_vendor_cannot_be_a_safety_critical_failover_hop(vendor):
     )
     with pytest.raises(UnsafeRouting):
         Router(cfg).resolve(Task.EXTRACT, Track.STANDARD)
+
+
+# ------------------------------------- this deployment's deliberate departure
+
+
+def test_deepseek_is_safety_trusted_in_this_deployment():
+    """The one entry in PROFILES that departs from the permissive default.
+
+    Pinned so the decision stays visible: if this ever turns red, either the
+    trust table changed or someone quietly put DeepSeek back, and the two
+    tests below stop describing what actually runs.
+    """
+    r = Router(_cfg(deepseek_api_key="test"))
+    assert r.providers["deepseek"] is False, "DeepSeek reverted to permissive"
+
+
+@pytest.mark.parametrize("task", ["extract", "critic"])
+@pytest.mark.parametrize("track", ["standard", "intimate"])
+def test_deepseek_can_serve_the_safety_critical_tasks(task, track):
+    cfg = _cfg(
+        deepseek_api_key="test",
+        llm_routes={
+            f"{task}.{track}": [{"provider": "deepseek", "model": "deepseek-v4-flash"}]
+        },
+    )
+    route = Router(cfg).resolve(Task(task), Track(track))
+    assert route.provider_name == "deepseek"
+    assert route.model == "deepseek-v4-flash"
 
 
 @pytest.mark.parametrize("vendor", VENDORS)
@@ -500,7 +535,7 @@ async def test_legacy_failover_between_two_providers_terminates():
 # -------------------------------------------- safety trust is not configurable
 
 
-@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("vendor", PERMISSIVE_VENDORS)
 @pytest.mark.parametrize("task", ["extract", "critic"])
 def test_an_operator_cannot_vouch_for_a_vendor(vendor, task):
     cfg = _cfg(
@@ -515,7 +550,7 @@ def test_an_operator_cannot_vouch_for_a_vendor(vendor, task):
         router.resolve(Task(task), Track.STANDARD)
 
 
-@pytest.mark.parametrize("vendor", VENDORS)
+@pytest.mark.parametrize("vendor", PERMISSIVE_VENDORS)
 def test_naming_one_vendor_does_not_promote_another(vendor):
     cfg = _cfg(
         **{f"{v}_api_key": "test" for v in VENDORS},

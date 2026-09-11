@@ -135,3 +135,69 @@ async def test_openai_response_refusal_triggers_anthropic_model_failover():
 
     assert fallback.models == ["claude-fallback"]
     assert result.model == "claude-fallback"
+
+
+async def test_a_budget_exhausted_by_reasoning_is_not_reported_as_success():
+    """The failure that cost an afternoon: a reasoning model spends max_tokens
+    on its reasoning before emitting a character, so `content` comes back empty
+    with `finish_reason == "length"`.
+
+    Downstream that read as two different things and neither named the cause.
+    `structured()` said "no JSON object in response: ''", and a plain
+    `complete()` said nothing at all -- the humanizer's "a rewrite that grew is
+    a failed rewrite, keep the original" fallback then restored the draft, so
+    every rewrite silently became a no-op.
+    """
+    from openai.types.chat import ChatCompletion
+
+    from sonder.llm import ProviderError
+
+    response = ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "deepseek-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": ""},
+                }
+            ],
+            "usage": {"prompt_tokens": 40, "completion_tokens": 700, "total_tokens": 740},
+        }
+    )
+
+    with pytest.raises(ProviderError, match="truncated at max_tokens=700"):
+        await _openai_provider(response).complete(
+            [], model="deepseek-flash", max_tokens=700
+        )
+
+
+async def test_a_truncated_but_nonempty_completion_is_still_returned():
+    """Truncation alone is not the error -- callers already handle partial
+    text, and the Critic truncates its `note` field rather than rejecting the
+    scores. Only the empty case is indistinguishable from a provider fault."""
+    from openai.types.chat import ChatCompletion
+
+    response = ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "deepseek-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": "partial answer"},
+                }
+            ],
+            "usage": {"prompt_tokens": 40, "completion_tokens": 700, "total_tokens": 740},
+        }
+    )
+
+    out = await _openai_provider(response).complete([], model="deepseek-flash")
+
+    assert out.text == "partial answer"

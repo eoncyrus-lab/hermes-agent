@@ -3,6 +3,9 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
 from sonder import cli
 
 
@@ -151,3 +154,30 @@ async def test_token_revoke_is_idempotent(monkeypatch):
     monkeypatch.setattr(cli, "maintenance_session", maintenance)
     assert await cli._token_revoke(uuid4(), token_id) == cli.EXIT_OK
     assert session.calls == 1
+
+
+def test_a_missing_dsn_is_reported_as_missing_not_as_a_traceback(monkeypatch, capsys):
+    """An operator who types a command without `SONDER_DATABASE_URL` used to
+    get a pydantic traceback ending in `Field required` -- which names the
+    field rather than the variable to set, and says nothing about the wrapper
+    that sets it for them.
+
+    `_dispatch` is replaced rather than the environment being emptied: the
+    handler is what this covers, and the real validation path is pydantic's.
+    """
+
+    def _raise(_parser, _args):
+        raise ValidationError.from_exception_data(
+            "Settings", [{"type": "missing", "loc": ("database_url",), "input": {}}]
+        )
+
+    monkeypatch.setattr(cli, "_dispatch", _raise)
+    monkeypatch.setattr("sys.argv", ["sonder", "wechat", "status"])
+
+    with pytest.raises(SystemExit) as exit_code:
+        cli.main()
+
+    assert exit_code.value.code == cli.EXIT_CONFIG
+    out = capsys.readouterr().out
+    assert "SONDER_DATABASE_URL" in out
+    assert "run-local.sh" in out

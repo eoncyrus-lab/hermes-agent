@@ -25,7 +25,8 @@ for var in \
   SONDER_ERASURE_DB_PASSWORD \
   SONDER_WORKER_DB_PASSWORD \
   SONDER_MAINT_DB_PASSWORD \
-  SONDER_BOT_DB_PASSWORD
+  SONDER_BOT_DB_PASSWORD \
+  SONDER_WECHAT_DB_PASSWORD
 do
   require "$var"
 done
@@ -66,3 +67,4 @@ set_password sonder_erase    "$SONDER_ERASURE_DB_PASSWORD"
 set_password sonder_worker   "$SONDER_WORKER_DB_PASSWORD"
 set_password sonder_maint    "$SONDER_MAINT_DB_PASSWORD"
 set_password sonder_bot      "$SONDER_BOT_DB_PASSWORD"
+set_password sonder_wechat   "$SONDER_WECHAT_DB_PASSWORD"

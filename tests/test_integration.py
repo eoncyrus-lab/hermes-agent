@@ -290,6 +290,7 @@ async def test_service_roles_have_expected_rls_privileges(db, register):
         "sonder_bot": (False, False),
         "sonder_erase": (False, False),
         "sonder_identity": (False, False),
+        "sonder_wechat": (False, False),
         "sonder_worker": (False, False),
         "sonder_maint": (False, True),
     }

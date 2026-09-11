@@ -16,6 +16,8 @@ provider. See `_guard`.
 
 from __future__ import annotations
 
+import asyncio
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -203,11 +205,18 @@ class Router:
             )
         # Trust comes from the profile and the endpoint, never from the
         # deployment: an operator cannot declare a reseller safety-trusted.
+        #
+        # `user_supplied` outranks both. A provider that came from a user's own
+        # credential row is permissive whatever its profile says, official ones
+        # included -- their key still points wherever they typed, and the
+        # operator cannot verify it. That is what keeps EXTRACT and CRITIC on
+        # credentials this deployment provisioned.
         self._profiles[name] = declared.profile
         self._register(
             name,
             provider,
-            permissive=profile.permissive
+            permissive=declared.user_supplied
+            or profile.permissive
             or _is_custom_endpoint(declared.profile, base_url),
         )
 
@@ -668,9 +677,64 @@ def _is_custom_endpoint(profile_name: str, base_url: str | None) -> bool:
 
 _router: Router | None = None
 
+# Which user's credentials the current task is running under. A ContextVar
+# rather than an argument because the call sites are `router()` deep inside the
+# generator, the humanizer and the critic, and threading a user id through all
+# of them would put a parameter on every function between here and there for
+# something only this module reads.
+_active_user: ContextVar[str | None] = ContextVar("sonder_llm_user", default=None)
+_user_routers: dict[str, Router] = {}
+
+
+def activate_user(user_id, creds) -> list[str]:
+    """Build this user's router and make it the active one.
+
+    Returns the provider names the user asked for and did not get, so a caller
+    can say so rather than leaving them to wonder why their key is unused.
+    Rebuilt on every request: a credential change should take effect without a
+    restart, and building a Router is a dict merge plus one client per
+    provider the user configured, which is a handful.
+    """
+    from ..config import settings
+    from . import user_credentials
+
+    base = settings()
+    providers, refused = user_credentials.merge_providers(
+        base.llm_providers, base.llm_routes, creds
+    )
+    routes = user_credentials.routes_with_intimate(base.llm_routes, creds)
+    candidate = Router(
+        base.model_copy(
+            update={"llm_providers": providers, "llm_routes": routes},
+        )
+    )
+    candidate.validate_routes()
+    key = str(user_id)
+    previous = _user_routers.get(key)
+    if previous is not None and previous is not candidate:
+        # The old one holds httpx clients; leaving them open would leak a
+        # connection pool per credential change.
+        for provider in previous._providers.values():  # noqa: SLF001
+            close = getattr(provider, "aclose", None)
+            if close is not None:
+                asyncio.create_task(close())
+    _user_routers[key] = candidate
+    _active_user.set(key)
+    return refused
+
+
+def deactivate_user() -> None:
+    """Return to the deployment's own providers."""
+    _active_user.set(None)
+
 
 def router() -> Router:
     global _router
+    active = _active_user.get()
+    if active is not None:
+        found = _user_routers.get(active)
+        if found is not None:
+            return found
     if _router is None:
         candidate = Router()
         candidate.validate_routes()
@@ -682,3 +746,5 @@ def reset_router() -> None:
     """Test seam: rebuild on the next call after settings change."""
     global _router
     _router = None
+    _user_routers.clear()
+    _active_user.set(None)

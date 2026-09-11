@@ -535,3 +535,47 @@ class TelegramAccountRow(Base):
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     linked_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
+
+
+class WechatAccountRow(Base):
+    """WeChat handle -> account. Never inferred from message content.
+
+    The handle looks like `o9cq800kum_xxx@im.wechat`. Like a Telegram id it is
+    presented by whoever is messaging the bot and is therefore a claim, not a
+    credential -- `auth_wechat` is the lookup that turns it into one, and it
+    lives on a role the API never holds.
+    """
+
+    __tablename__ = "wechat_accounts"
+    wechat_user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    linked_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
+
+
+class UserLlmCredentialRow(Base):
+    """A model credential a user brought themselves.
+
+    Only the ciphertext is here; the Fernet key is in the environment, so the
+    two have to be taken together to be worth anything. `provider` is the name
+    a route chain addresses, `profile` picks the protocol and default endpoint,
+    and `purpose` separates "use this for my requests" from "send my intimate
+    track here", which is how a self-hosted model gets used instead of
+    anybody trying to talk a hosted one out of its refusals.
+    """
+
+    __tablename__ = "user_llm_credentials"
+    id: Mapped[UUID] = _pk()
+    user_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(Text)
+    profile: Mapped[str] = mapped_column(Text)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    purpose: Mapped[str] = mapped_column(Text, default="general")
+    ciphertext: Mapped[bytes] = mapped_column()
+    key_version: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = _ts(default=lambda: datetime.now(UTC))

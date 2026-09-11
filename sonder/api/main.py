@@ -21,8 +21,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import update
 
 from ..agent import orchestrator
-from ..config import settings
 from ..domain.schemas.interaction import Channel
+from ..llm.provider import ProviderError
 from ..storage.db import dyad_session, erasure_session
 from ..storage.deletion import forget_person, inspect_person, orphaned_profiles
 from ..storage.models import RelationshipRow, StrategyRecordRow
@@ -33,9 +33,13 @@ from .auth import (
     owned_person,
     owned_relationship,
 )
+from .queue import enqueue as enqueue_job
+from .queue import enqueue_text_ingest
+from .ui import router as ui_router
 
 log = structlog.get_logger(__name__)
 app = FastAPI(title="Sonder", version="0.1.0")
+app.include_router(ui_router)
 
 ACTIONS = {"sent_verbatim", "sent_edited", "discarded"}
 
@@ -46,7 +50,11 @@ def _user_scope(identity: Identity) -> UserScope:
 
 class ReplyIn(BaseModel):
     relationship_id: UUID
-    text: str = Field(default="", max_length=2000)
+    # 2000 was the cap when this field only carried an instruction to be
+    # classified. It now also carries the conversation itself, and a pasted
+    # exchange runs past 2000 quickly -- silently truncating the thing the
+    # reply is about is worse than spending the tokens.
+    text: str = Field(default="", max_length=8000)
 
 
 class SuggestionOut(BaseModel):
@@ -84,8 +92,34 @@ async def reply(
         identity_claim=identity.claim,
     )
     request = orchestrator.route_request(body.text)
-    async with dyad_session(scope) as session:
-        result = await orchestrator.reply(session, scope, user_id, track=request.track)
+    try:
+        async with dyad_session(scope) as session:
+            result = await orchestrator.reply(
+                session,
+                scope,
+                user_id,
+                track=request.track,
+                fresh=orchestrator.handed_over(request),
+            )
+    except ProviderError as exc:
+        log.warning("reply_provider_failed", error=str(exc))
+        raise HTTPException(503, "the model returned nothing; try again") from exc
+
+    # The reply above was drafted from what the caller handed over and did not
+    # wait on a queue. This is the other half: the same text goes to the ingest
+    # pipeline so it stops being request-scoped and becomes an observation with
+    # an evidence ref the state model can learn from. Enqueued *after* the
+    # reply, because a slow worker must not make the hot path slow -- that
+    # inversion is the whole reason the two paths are separate.
+    notes = list(result.notes)
+    if request.text.strip() and not await enqueue_text_ingest(
+        user_id, body.relationship_id, request.text
+    ):
+        # Not fatal -- the reply is what the user asked for and it already
+        # exists. Not silent either: a conversation that never reaches the
+        # pipeline is one the next reply is still drafted against nothing.
+        notes.append("this exchange could not be queued for persistence")
+
     return ReplyOut(
         suggestions=[
             SuggestionOut(
@@ -101,7 +135,7 @@ async def reply(
         rationale=result.plan.rationale,
         next_milestone=result.plan.next_milestone,
         health_warning=result.health_warning,
-        notes=result.notes,
+        notes=notes,
         rejected_count=result.rejected_count,
     )
 
@@ -143,8 +177,6 @@ async def ingest(
     identity: Identity = Depends(current_identity),
 ) -> dict:
     """Accept screenshots, enqueue, return immediately."""
-    from arq.connections import RedisSettings, create_pool
-
     user_id = identity.user_id
     await owned_relationship(relationship_id, identity)
     if len(files) > 20:
@@ -153,15 +185,14 @@ async def ingest(
     if sum(len(p) for p in payloads) > 40 * 1024 * 1024:
         raise HTTPException(400, "upload too large")
 
-    redis = await create_pool(RedisSettings.from_dsn(settings().redis_url))
-    job = await redis.enqueue_job(
+    job_id = await enqueue_job(
         "ingest_screenshots",
         str(user_id),
         str(relationship_id),
         channel.value,
         payloads,
     )
-    return {"job_id": job.job_id if job else None, "queued": len(payloads)}
+    return {"job_id": job_id, "queued": len(payloads)}
 
 
 class ActionIn(BaseModel):

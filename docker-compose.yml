@@ -49,6 +49,7 @@ services:
       SONDER_WORKER_DB_PASSWORD: ${SONDER_WORKER_DB_PASSWORD:?set SONDER_WORKER_DB_PASSWORD}
       SONDER_MAINT_DB_PASSWORD: ${SONDER_MAINT_DB_PASSWORD:?set SONDER_MAINT_DB_PASSWORD}
       SONDER_BOT_DB_PASSWORD: ${SONDER_BOT_DB_PASSWORD:?set SONDER_BOT_DB_PASSWORD}
+      SONDER_WECHAT_DB_PASSWORD: ${SONDER_WECHAT_DB_PASSWORD:?set SONDER_WECHAT_DB_PASSWORD}
     volumes:
       - ./scripts/db-roles.sh:/opt/db-roles.sh:ro
     depends_on:
@@ -161,6 +162,38 @@ services:
       db-roles: {condition: service_completed_successfully}
       api: {condition: service_started}
     profiles: ["bot"]
+
+  wechat:
+    build: .
+    restart: unless-stopped
+    command: python -m sonder.wechat
+    env_file: .env
+    environment:
+      SONDER_DATABASE_URL: postgresql+asyncpg://sonder_app:${SONDER_APP_DB_PASSWORD:?set SONDER_APP_DB_PASSWORD}@db:5432/sonder
+      # `sonder_wechat`, which may execute `auth_wechat` and nothing else. Not
+      # `sonder_bot`: a Telegram user id is ten digits and frequently public,
+      # so `auth_telegram` is the more abusable of the two, and a process
+      # should hold the narrowest credential that does its job. Not
+      # `sonder_identity` either -- that one is for bearer tokens.
+      SONDER_IDENTITY_DATABASE_URL: postgresql+asyncpg://sonder_wechat:${SONDER_WECHAT_DB_PASSWORD:?set SONDER_WECHAT_DB_PASSWORD}@db:5432/sonder
+      SONDER_REDIS_URL: redis://:${SONDER_REDIS_PASSWORD:?set SONDER_REDIS_PASSWORD}@redis:6379/0
+      POSTGRES_PASSWORD: ""
+      SONDER_APP_DB_PASSWORD: ""
+      SONDER_IDENTITY_DB_PASSWORD: ""
+      SONDER_ERASURE_DB_PASSWORD: ""
+      SONDER_WORKER_DB_PASSWORD: ""
+      SONDER_MAINT_DB_PASSWORD: ""
+      SONDER_BOT_DB_PASSWORD: ""
+      SONDER_WECHAT_DB_PASSWORD: ""
+      SONDER_ERASURE_DATABASE_URL: ""
+      SONDER_WORKER_DATABASE_URL: ""
+      SONDER_MAINTENANCE_DATABASE_URL: ""
+      SONDER_BOT_DATABASE_URL: ""
+    depends_on:
+      db: {condition: service_healthy}
+      db-roles: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    profiles: ["wechat"]
 
 volumes:
   pgdata:

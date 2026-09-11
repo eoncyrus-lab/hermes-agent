@@ -48,14 +48,13 @@ def choose_objective(ctx: AgentContext) -> tuple[Objective, str]:
         if low("emotional_safety", 0.55) or high("pressure_exerted_by_self", 0.35):
             return (
                 Objective.DE_ESCALATE,
-                "health signals are the binding constraint; engagement is not "
-                "the goal right now",
+                "健康信号是当前的硬约束，现在不是推进的时候",
             )
 
     if st is None:
         return (
             Objective.ESTABLISH_RAPPORT,
-            "no state computed yet; the goal is to learn, not to advance",
+            "还没有算出状态；现在的目标是了解，不是推进",
         )
 
     def val(group: str, axis: str) -> float | None:
@@ -72,18 +71,18 @@ def choose_objective(ctx: AgentContext) -> tuple[Objective, str]:
     if momentum is not None and momentum < 0.3:
         return (
             Objective.CLARIFY_INTENT,
-            "momentum has fallen; guessing costs more than asking",
+            "势头掉下来了；猜的代价比问一句大",
         )
     if romantic is not None and romantic > 0.6 and (conversational or 0) > 0.5:
-        return Objective.MOVE_OFFLINE, "mutual signals are established online"
+        return Objective.MOVE_OFFLINE, "线上已经互相给过信号了，可以约出来"
     if emotional is not None and emotional < 0.35:
-        return Objective.DEEPEN_DISCLOSURE, "the exchange is still surface-level"
+        return Objective.DEEPEN_DISCLOSURE, "交流还停在表面"
     if conversational is not None and conversational > 0.5:
         return (
             Objective.BUILD_TENSION,
-            "comfort is established; ambiguity is what is missing",
+            "舒适已经有了，缺的是那点暧昧",
         )
-    return Objective.INCREASE_ENGAGEMENT, "the base of the interaction is still thin"
+    return Objective.INCREASE_ENGAGEMENT, "跟她之间的底子还很薄"
 
 
 # Tactics that are never appropriate for a given objective, whatever the
@@ -141,19 +140,16 @@ def plan(ctx: AgentContext) -> Plan:
         if entry.status is BeliefStatus.UNKNOWN:
             predicted, basis = (
                 0.5,
-                (
-                    f"'{tactics[0]}' has n={est.n} for her -- not enough to predict; "
-                    "treating this as an exploratory move"
-                ),
+                f"'{tactics[0]}' 在她身上 {est.describe()}——不足以预测，这一步当作试探",
             )
             exploration = True
         else:
             predicted = round(est.mean, 3)
-            basis = f"'{tactics[0]}' {est.describe()} for her"
+            basis = f"'{tactics[0]}' 在她身上 {est.describe()}"
     else:
         predicted, basis = (
             0.5,
-            ("no preference history for this tactic with this person; base rate only"),
+            ("跟她之间这个套路还没有历史，只能用基础概率"),
         )
         exploration = True
 
@@ -170,12 +166,12 @@ def plan(ctx: AgentContext) -> Plan:
 
 
 MILESTONES: dict[Objective, str] = {
-    Objective.ESTABLISH_RAPPORT: "she asks you something unprompted",
-    Objective.INCREASE_ENGAGEMENT: "she continues a topic without being asked",
-    Objective.DEEPEN_DISCLOSURE: "she volunteers something she has not said before",
-    Objective.BUILD_TENSION: "she returns the register rather than defusing it",
-    Objective.MOVE_OFFLINE: "a specific time is agreed",
-    Objective.CLARIFY_INTENT: "you have an answer either way",
-    Objective.DE_ESCALATE: "she sets the pace for the next exchange",
-    Objective.REPAIR: "she engages with the substance rather than the apology",
+    Objective.ESTABLISH_RAPPORT: "她会主动问你点什么",
+    Objective.INCREASE_ENGAGEMENT: "不用你追问，她会自己接着聊下去",
+    Objective.DEEPEN_DISCLOSURE: "她会主动说一件以前没提过的事",
+    Objective.BUILD_TENSION: "她会接住那点暧昧，而不是打岔岔开",
+    Objective.MOVE_OFFLINE: "定下具体时间",
+    Objective.CLARIFY_INTENT: "不管答案是什么，你都有个数了",
+    Objective.DE_ESCALATE: "下一轮由她来定节奏",
+    Objective.REPAIR: "她接的是事情本身，而不是那句道歉",
 }

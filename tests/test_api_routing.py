@@ -11,9 +11,28 @@ from sonder.api.auth import Identity
 from sonder.llm import Task, Track
 
 
+class _NoCredentials:
+    """A session that answers the one query the request path now makes.
+
+    `orchestrator._bind_user_llm` looks up the caller's own model credentials
+    before drafting anything, so a stub that yields a bare object no longer
+    gets as far as the code under test. Returning no rows is the common case:
+    most users bring no key.
+    """
+
+    async def execute(self, *_args, **_kwargs):
+        return self
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+
 @asynccontextmanager
 async def _session(_scope):
-    yield object()
+    yield _NoCredentials()
 
 
 def _identity(user_id=None) -> Identity:
@@ -29,8 +48,9 @@ async def _owned(_relationship_id, _identity):
 async def test_reply_endpoint_passes_explicit_track(monkeypatch):
     seen = {}
 
-    async def fake_reply(_session, _scope, _user_id, *, track):
+    async def fake_reply(_session, _scope, _user_id, *, track, fresh=()):
         seen["track"] = track
+        seen["fresh"] = fresh
         return SimpleNamespace(
             suggestions=[],
             plan=SimpleNamespace(
@@ -52,6 +72,50 @@ async def test_reply_endpoint_passes_explicit_track(monkeypatch):
         identity=_identity(),
     )
     assert seen["track"] is Track.INTIMATE
+
+
+@pytest.mark.asyncio
+async def test_the_hot_path_receives_the_text_the_caller_handed_over(monkeypatch):
+    """The bug this pins: `/reply` parsed `body.text` for its track and then
+    dropped it. `orchestrator.reply` had no parameter for it, so every reply
+    was drafted against `CONVERSATION: (none)` and the two inputs "we should
+    stop talking" and "want to see a film tomorrow" produced the same generic
+    small talk. The evidence refs were never wrong; the reply was simply about
+    nothing.
+
+    The prefix stripping is asserted alongside it, because the command must
+    not reach a model -- that is the whole point of `route_request` removing
+    it before any prompt is built.
+    """
+    seen = {}
+
+    async def fake_reply(_session, _scope, _user_id, *, track, fresh=()):
+        seen["fresh"] = fresh
+        return SimpleNamespace(
+            suggestions=[],
+            plan=SimpleNamespace(
+                objective=SimpleNamespace(value="maintain"),
+                rationale="test",
+                next_milestone="test",
+            ),
+            health_warning=None,
+            notes=[],
+            rejected_count=0,
+        )
+
+    monkeypatch.setattr(main, "owned_relationship", _owned)
+    monkeypatch.setattr(main, "dyad_session", _session)
+    monkeypatch.setattr(main.orchestrator, "reply", fake_reply)
+
+    await main.reply(
+        main.ReplyIn(
+            relationship_id=uuid4(),
+            text="/intimate 她说：我们以后别联系了",
+        ),
+        identity=_identity(),
+    )
+
+    assert [t.body for t in seen["fresh"]] == ["她说：我们以后别联系了"]
 
 
 @pytest.mark.asyncio
@@ -124,7 +188,7 @@ async def test_intimate_request_keeps_safety_tasks_on_standard_track(monkeypatch
     for module in (orchestrator, generator, humanizer, critic, signals):
         monkeypatch.setattr(module, "router", lambda: spy)
 
-    async def context(_session, scope):
+    async def context(_session, scope, **_kw):
         return AgentContext(scope=scope)
 
     monkeypatch.setattr(orchestrator.ctx_mod, "build", context)
@@ -212,7 +276,7 @@ def test_every_relationship_route_survives_its_own_dependencies(client, monkeypa
 
     http, _identity_used = client
 
-    async def fake_reply(_session, _scope, _user_id, *, track):
+    async def fake_reply(_session, _scope, _user_id, *, track, fresh=()):
         return SimpleNamespace(
             suggestions=[],
             plan=SimpleNamespace(

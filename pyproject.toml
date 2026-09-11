@@ -23,6 +23,14 @@ dependencies = [
     "arq>=0.26",
     "structlog>=24.4",
     "tenacity>=9.0",
+    # Pairing a WeChat bot means showing a QR in the terminal. ASCII output
+    # needs no Pillow, so this stays a pure-Python dependency with no system
+    # libraries behind it.
+    "qrcode>=7.4",
+    # WeChat's CDN encrypts every media file with AES-128-ECB. Nothing else
+    # here needs a crypto library -- the bearer tokens are SHA-256 through
+    # hashlib, and the identity claims are signed by Postgres.
+    "cryptography>=43",
 ]
 
 [project.scripts]

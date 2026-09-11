@@ -8,6 +8,7 @@ auditable partial progress rather than nothing.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -19,7 +20,7 @@ from ..analyzer import ingest as ingest_mod
 from ..analyzer.features import Baseline
 from ..analyzer.signals import extract_signals
 from ..config import settings
-from ..domain.schemas.interaction import Channel, Speaker
+from ..domain.schemas.interaction import Channel, IngestSource, Speaker
 from ..learning import outcomes
 from ..state import preference as pref_state
 from ..state import relationship as state_engine
@@ -82,6 +83,20 @@ def _screenshot_ingest_id(
     )
 
 
+def _text_ingest_id(relationship_id: UUID, channel: str, text: str) -> UUID:
+    """The same content-addressed idea as a screenshot.
+
+    A redelivered paste, or a user who sends the same paragraph twice, has to
+    converge on one interaction. Keying on the text is what makes that true
+    without asking the queue for exactly-once delivery it does not offer.
+    """
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return uuid5(
+        NAMESPACE_URL,
+        f"sonder:text:{relationship_id}:{channel}:{digest}",
+    )
+
+
 def _with_stable_ingest_ids(interaction, interaction_id: UUID):
     messages = tuple(
         message.model_copy(
@@ -98,11 +113,29 @@ def _with_stable_ingest_ids(interaction, interaction_id: UUID):
     return interaction.model_copy(update={"id": interaction_id, "messages": messages})
 
 
-async def ingest_screenshots(
-    ctx, user_id: str, relationship_id: str, channel: str, images: list[bytes]
+async def _ingest(
+    ctx,
+    *,
+    user_id: str,
+    relationship_id: str,
+    channel: str,
+    ingest_id: UUID,
+    source: IngestSource,
+    parse: Callable[[], Awaitable[ingest_mod.ParsedConversation]],
 ) -> dict:
+    """Everything ingest does that does not depend on where the text came from.
+
+    Pulled out when pasted text became a second source. The lock, the duplicate
+    guard and the evidence-ref construction are exactly the parts that must not
+    diverge between a screenshot and a paste: they are what make an observation
+    identifiable, replay-safe, and referenceable by the assessments built on
+    top of it.
+
+    `parse` runs inside the per-ingest lock. That matters for screenshots --
+    the vision call is the expensive part, and a replay must not repeat it --
+    and costs nothing for text.
+    """
     scope = Scope(UUID(user_id), UUID(relationship_id))
-    ingest_id = _screenshot_ingest_id(scope.relationship_id, channel, images)
 
     # ARQ retries and duplicate deliveries must converge on one interaction.
     # This early read avoids another vision/signal extraction call on replay.
@@ -123,10 +156,10 @@ async def ingest_screenshots(
         if not duplicate:
             # Keep the per-ingest lock while the expensive calls run. This is
             # intentionally a narrow lock keyed by the content digest: a
-            # concurrent delivery of different screenshots is unaffected.
-            parsed = await ingest_mod.parse_screenshots(images)
+            # concurrent delivery of different material is unaffected.
+            parsed = await parse()
             interaction = ingest_mod.to_interaction(
-                parsed, scope.relationship_id, Channel(channel)
+                parsed, scope.relationship_id, Channel(channel), source=source
             )
             interaction = _with_stable_ingest_ids(interaction, ingest_id)
 
@@ -150,6 +183,7 @@ async def ingest_screenshots(
     await recompute_state(ctx, user_id, relationship_id)
     log.info(
         "ingest_complete",
+        source=source.value,
         messages=len(interaction.messages),
         signals=len(signals),
         unreadable=parsed.unreadable_regions,
@@ -160,6 +194,61 @@ async def ingest_screenshots(
         "signals": len(signals),
         "unreadable_regions": parsed.unreadable_regions,
     }
+
+
+async def ingest_screenshots(
+    ctx, user_id: str, relationship_id: str, channel: str, images: list[bytes]
+) -> dict:
+    async def parse():
+        return await ingest_mod.parse_screenshots(images)
+
+    return await _ingest(
+        ctx,
+        user_id=user_id,
+        relationship_id=relationship_id,
+        channel=channel,
+        ingest_id=_screenshot_ingest_id(UUID(relationship_id), channel, images),
+        source=IngestSource.SCREENSHOT_OCR,
+        parse=parse,
+    )
+
+
+async def ingest_text(
+    ctx, user_id: str, relationship_id: str, channel: str, text: str
+) -> dict:
+    """Persist a conversation the user handed over as text.
+
+    This is what makes the hot path's fresh context durable. The reply is
+    drafted from what the caller sent, immediately and without waiting on a
+    queue; this job is how the same text stops being request-scoped and becomes
+    an observation with an evidence ref, so the state model can learn from it.
+    Without it, every handed-over conversation would be readable exactly once
+    and then forgotten, which is the opposite of what this product claims.
+
+    One message with `Speaker.UNKNOWN`: a pasted block has no reliable speaker
+    structure, and guessing one would write a false attribution into the
+    evidence record -- the thing this schema exists to prevent. A structured
+    export is a different source (`IngestSource.CHAT_EXPORT`) and a different
+    job, not something to infer here.
+    """
+    body = text.strip()
+    if not body:
+        return {"skipped": "empty"}
+
+    async def parse():
+        return ingest_mod.ParsedConversation(
+            messages=[ingest_mod.ParsedMessage(sender=Speaker.UNKNOWN.value, text=body)]
+        )
+
+    return await _ingest(
+        ctx,
+        user_id=user_id,
+        relationship_id=relationship_id,
+        channel=channel,
+        ingest_id=_text_ingest_id(UUID(relationship_id), channel, body),
+        source=IngestSource.MANUAL_ENTRY,
+        parse=parse,
+    )
 
 
 async def recompute_state(ctx, user_id: str, relationship_id: str) -> dict:
@@ -317,7 +406,13 @@ async def purge_artifacts(ctx) -> dict:
 
 
 class WorkerSettings:
-    functions = [ingest_screenshots, recompute_state, score_outcomes, purge_artifacts]
+    functions = [
+        ingest_screenshots,
+        ingest_text,
+        recompute_state,
+        score_outcomes,
+        purge_artifacts,
+    ]
     cron_jobs = [
         cron(score_outcomes, hour=None, minute={7, 37}),
         cron(purge_artifacts, hour={3}, minute={0}),

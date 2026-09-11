@@ -484,6 +484,20 @@ async def test_replaying_a_migration_does_not_give_a_privilege_back(db, superuse
                 )
             ).scalar() is True
 
+    # Put the schema back where "apply them in order" leaves it.
+    #
+    # This test rewinds the migration history deliberately, and a later file
+    # extends something an earlier one owns: `app_current_user_id()` learns the
+    # `w` claim kind in 007, and replaying 003 replaces it with the two-kind
+    # version. Left alone, every later test runs against a database no operator
+    # would ever have, and the failure it produces -- a `w` claim resolving to
+    # no user -- looks nothing like its cause.
+    #
+    # This is a real operational hazard and not only a test artefact: replaying
+    # 003 against a live database silently disables WeChat authentication. It is
+    # why the README says the files are applied in order and not piecemeal.
+    await superuser((migrations / "007_wechat_channel.sql").read_text())
+
 
 async def test_only_the_bot_role_can_trade_a_telegram_id_for_a_claim(db, register):
     """A Telegram id is ten guessable digits; a token digest is not.
@@ -552,6 +566,149 @@ async def test_telegram_auth_does_not_depend_on_an_api_token(db):
     assert row is not None and row.user_id == user_id
     async with user_session(UserScope(user_id, row.identity_claim)) as s:
         assert (await s.execute(text("SELECT count(*) FROM relationships"))).scalar() == 1
+
+
+# --------------------------------------------------------------- the wechat
+
+
+async def test_only_the_wechat_role_can_trade_a_wechat_id_for_a_claim(db):
+    """`sonder_wechat` is separate from `sonder_bot` on purpose.
+
+    A WeChat handle is opaque rather than a guessable integer, but the two RPCs
+    still differ in how much a holder can do with them, and a process should
+    carry the narrowest credential that does its job. This checks the
+    separation rather than trusting the migration's comment: the WeChat role
+    must not hold `auth_telegram`, and the bot must not hold `auth_wechat`.
+    """
+    from sonder.storage.db import maintenance_session
+
+    async def grantees(function: str) -> set[str]:
+        async with maintenance_session() as s:
+            return {
+                row[0]
+                for row in (
+                    await s.execute(
+                        text(
+                            "SELECT r.rolname FROM pg_proc p, pg_roles r "
+                            " WHERE p.proname = :f "
+                            "   AND has_function_privilege("
+                            "         r.rolname, p.oid, 'EXECUTE') "
+                            "   AND r.rolname LIKE 'sonder\\_%'"
+                        ),
+                        {"f": function},
+                    )
+                ).all()
+            }
+
+    wechat = await grantees("auth_wechat")
+    telegram = await grantees("auth_telegram")
+
+    assert "sonder_wechat" in wechat, "the bridge cannot authenticate its own chats"
+    assert "sonder_bot" not in wechat, "a compromised bridge would mint WeChat claims"
+    assert "sonder_bot" in telegram
+    assert "sonder_wechat" not in telegram, "the bridge can mint Telegram claims"
+    for shared in ("sonder_identity", "sonder_app", "sonder_erase", "sonder_worker"):
+        assert shared not in wechat, f"{shared} can impersonate by WeChat id"
+
+
+async def test_the_wechat_role_cannot_read_the_mapping_table(db):
+    """One RPC and no table privileges at all, like `sonder_identity`.
+
+    The RPC is SECURITY DEFINER, so it does not need one. A role that could
+    read `wechat_accounts` could enumerate who is reachable, which is exactly
+    the mapping the pairing flow exists to keep behind a lookup.
+    """
+    from sqlalchemy.exc import ProgrammingError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    url = os.environ.get("SONDER_WECHAT_DATABASE_URL")
+    if not url:
+        pytest.skip("SONDER_WECHAT_DATABASE_URL not set")
+
+    engine = create_async_engine(url)
+    try:
+        for table in ("wechat_accounts", "telegram_accounts", "users", "api_tokens"):
+            # A fresh connection per statement: the first failure aborts the
+            # transaction, and a reused one would report that instead.
+            with pytest.raises(ProgrammingError, match="permission denied"):
+                async with engine.connect() as conn:
+                    await conn.execute(text(f"SELECT count(*) FROM {table}"))
+    finally:
+        await engine.dispose()
+
+
+async def test_wechat_auth_resolves_an_account_and_nothing_else(db):
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from sonder.storage.db import maintenance_session, user_session
+    from sonder.storage.scope import UserScope
+
+    url = os.environ.get("SONDER_WECHAT_DATABASE_URL")
+    if not url:
+        pytest.skip("SONDER_WECHAT_DATABASE_URL not set")
+
+    # Not a constant: `wechat_user_id` is the primary key, so a fixed value
+    # leaves a row behind and the second run against the same database fails on
+    # it. The DB suite has to be re-runnable -- that is how it is used.
+    user_id, wechat_id = uuid4(), f"{uuid4().hex}@im.wechat"
+    async with maintenance_session() as s:
+        await _seed(s, user_id, uuid4(), uuid4(), "WeChat")
+        await s.execute(
+            text("INSERT INTO wechat_accounts (wechat_user_id,user_id) VALUES (:w,:u)"),
+            {"w": wechat_id, "u": user_id},
+        )
+
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text("SELECT * FROM auth_wechat(:w)"), {"w": wechat_id}
+                )
+            ).first()
+    finally:
+        await engine.dispose()
+
+    assert row is not None and row.user_id == user_id
+    assert row.identity_claim.startswith("w:"), "claim must name its channel"
+
+    async with user_session(UserScope(user_id, row.identity_claim)) as s:
+        # Two separate assertions on purpose. A `w` claim that resolves to no
+        # user and a policy that filters the row out both present as "zero
+        # rows", and they have completely different causes -- one is the claim
+        # format, the other is row security.
+        resolved = (
+            await s.execute(text("SELECT coalesce(app_current_user_id()::text, 'NULL')"))
+        ).scalar()
+        seen = (await s.execute(text("SELECT count(*) FROM relationships"))).scalar()
+
+    assert resolved == str(user_id), f"claim resolved to {resolved}, not the user"
+    assert seen == 1
+
+
+async def test_an_unpaired_wechat_id_resolves_to_nothing(db):
+    """Anyone can message a bot. This is the boundary that decides whose
+    relationships they can reach, so an unknown id must produce no row rather
+    than some default account."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    url = os.environ.get("SONDER_WECHAT_DATABASE_URL")
+    if not url:
+        pytest.skip("SONDER_WECHAT_DATABASE_URL not set")
+
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text("SELECT * FROM auth_wechat(:w)"),
+                    {"w": f"{uuid4().hex}@im.wechat"},
+                )
+            ).first()
+    finally:
+        await engine.dispose()
+
+    assert row is None
 
 
 async def test_the_ttl_purge_can_actually_clear_a_source_artifact(db, register):
@@ -887,6 +1044,10 @@ async def test_role_script_rotates_quoted_passwords_and_the_roles_can_log_in(db)
             "SONDER_TEST_MAINT_DB_PASSWORD",
         ),
         "sonder_bot": ("SONDER_BOT_DB_PASSWORD", "SONDER_TEST_BOT_DB_PASSWORD"),
+        "sonder_wechat": (
+            "SONDER_WECHAT_DB_PASSWORD",
+            "SONDER_TEST_WECHAT_DB_PASSWORD",
+        ),
     }
     original = {
         script_var: os.environ[test_var]

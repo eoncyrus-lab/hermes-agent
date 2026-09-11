@@ -57,6 +57,7 @@ export SONDER_TEST_IDENTITY_DB_PASSWORD="$(new_password)"
 export SONDER_TEST_ERASURE_DB_PASSWORD="$(new_password)"
 export SONDER_TEST_WORKER_DB_PASSWORD="$(new_password)"
 export SONDER_TEST_BOT_DB_PASSWORD="$(new_password)"
+export SONDER_TEST_WECHAT_DB_PASSWORD="$(new_password)"
 
 compose=(docker compose -f docker-compose.test.yml -p sonder-check)
 cleanup() {
@@ -76,6 +77,7 @@ export SONDER_ERASURE_DATABASE_URL="postgresql+asyncpg://sonder_erase:$SONDER_TE
 export SONDER_WORKER_DATABASE_URL="postgresql+asyncpg://sonder_worker:$SONDER_TEST_WORKER_DB_PASSWORD@$host"
 export SONDER_IDENTITY_DATABASE_URL="postgresql+asyncpg://sonder_identity:$SONDER_TEST_IDENTITY_DB_PASSWORD@$host"
 export SONDER_BOT_DATABASE_URL="postgresql+asyncpg://sonder_bot:$SONDER_TEST_BOT_DB_PASSWORD@$host"
+export SONDER_WECHAT_DATABASE_URL="postgresql+asyncpg://sonder_wechat:$SONDER_TEST_WECHAT_DB_PASSWORD@$host"
 # The migration identity, for the tests that replay a migration to prove it
 # is rerunnable in any order without handing a privilege back.
 export SONDER_SUPERUSER_DATABASE_URL="postgresql+asyncpg://sonder:$SONDER_TEST_POSTGRES_PASSWORD@$host"
