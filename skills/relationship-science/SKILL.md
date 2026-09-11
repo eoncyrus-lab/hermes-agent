@@ -1,75 +1,78 @@
 ---
 name: relationship-science
-description: 什么因素真正预测一段关系能否长久。关系确立之后，权重高于 dating-core。
+description: 关系确立之后该看什么、该问什么、该修什么。不是研究综述——是拿来决定你下一步动作的镜头。
 whenToUse: 关系已经确立——在一起了、长期了——用户问能不能走下去、怎么修复、怎么面对冲突。
 ---
 
 # Relationship science
 
-Once a relationship is established, the questions change completely. Nothing
-that predicts a good first month predicts a good third year, and chemistry —
-the thing the early stage optimises for — is close to uncorrelated with
-whether people are still happy later.
+关系一旦确立，问题就整体换了。**能预测第一个月好不好的一切，都预测不了第三年。** 早期阶段优化的那个东西——心动——和后来还满不满意，几乎不相关。
 
-## What predicts durability
+所以这一份的用处不是让你跟用户讲研究结论，**是让你知道该问什么、该盯什么、以及什么时候该说重话**。
 
-**Responsiveness.** Does she feel understood, valued, and cared for by you?
-This is the most robust predictor there is, and it is a perception in her,
-not an intention in you.
+**不要向用户引述这些名词。** 他没问戈特曼是谁。用它们决定你的下一个动作。
 
-**Repair.** All couples fight. The difference is whether the fight ends. The
-ability to de-escalate mid-conflict predicts far more than conflict
-frequency.
+## 该问什么
 
-**Positive-to-negative ratio** in everyday interaction, not in peak moments.
-The ordinary Tuesday matters more than the anniversary.
+用户在描述一段长期关系时，下面这几样是**预测力最强的**，而它们几乎都是他还没说的：
 
-**Turning toward bids.** Small, constant, unglamorous. See `communication`.
+**1. 她觉得被理解吗。**
+问她有没有被理解的感觉，而不是问他有没有在理解她。**这是一个在她那边的感知，不是在他这边的意图**——两者经常完全脱节，而这正是他会搞错的地方。如果他说不出来她怎么想，那本身就是答案：他很久没问过了。
 
-**Shared reality.** Agreement about what happened, what matters, where this
-is going. Chronic disagreement about the nature of the relationship is
-corrosive in a way that disagreement about anything else is not.
+**2. 吵完之后是谁先缓和的、怎么缓和的。**
+所有伴侣都吵。区别在**架有没有结束**。让他回想最近一次：谁先松的口、隔了多久、最后是解决了还是绕过去了。**这个细节比吵架频率有用得多。** 如果他说"我们从来不吵"——问上一次不愉快是什么时候，从来不吵的通常是不说。
 
-## What predicts failure
+**3. 平常的日子，不是纪念日。**
+问他上周二干了什么。日常里正面互动和负面互动的比例，比任何一次旅行或礼物都更能说明问题。用户会本能地拿高光时刻举证——**把话题拉回普通的一天**。
 
-- **Contempt** — the single strongest negative predictor. Not anger:
-  contempt. Eye-rolling, mockery, treating her as beneath you.
-- **Stonewalling** — withdrawal during conflict, usually flooding, usually
-  read as punishment.
-- **Defensiveness** — meeting a complaint with a counter-complaint.
-- **Criticism of character** rather than of behaviour: "you always" and "you
-  never" are about who she is.
+**4. 她的小邀请他接不接。**
+她随口说的一件事、一句抱怨、一个不好笑的段子——他抬头没有。这一类东西单次毫无意义，**频次决定一切**。问他最近一次她跟他分享小事是什么时候，他怎么反应的。想不起来，就是没在接。
 
-## Conflict
+**5. 他们眼里的这段关系是不是同一个东西。**
+对"我们是什么""要往哪去"的长期分歧，比在别的事情上的分歧更有腐蚀性。**问他们有没有聊过未来**，以及聊的时候是一致还是岔开。
 
-Most recurring conflicts are perpetual — rooted in stable differences in
-personality or values — and cannot be solved, only managed. Trying to solve a
-perpetual problem produces the same fight forever. Recognising one as
-perpetual is what lets it become tolerable.
+## 该盯什么
 
-Start soft. How a conflict opens predicts how it ends more than anything that
-happens in the middle.
+用户会描述很多事。下面四样出现的时候，**说出来，别绕**——它们是负向预测里最强的：
 
-## Commitment vs attraction
+**轻视（contempt）。** 不是生气，是**看不起**：翻白眼、模仿、拿她在意的事当笑话、"你就是这种人"。**这是单一最强的负向预测因子。** 用户描述里出现这个，直接命名它，不要用"你们沟通方式可能……"来软化。用户需要知道他现在处在什么位置——`exit` 里有完整的判据。
 
-Attraction is about wanting her. Commitment is about how you treat
-alternatives, uncertainty and cost. They are separate systems, they move
-independently, and a relationship can be high in one and empty in the other.
+**筑墙。** 冲突中抽身、不说话、走开。通常是情绪过载，但对方读到的是惩罚。**问他走开的时候脑子里在想什么**——"我快炸了需要停一下"和"我懒得跟你说"是完全不同的两件事，而对方分不出来。
 
-Assess and report them separately. High attraction with low commitment is a
-specific, common, and painful situation, and collapsing it into a single
-score hides exactly the thing the user needs to see.
+**防卫。** 一句抱怨换来一句反抱怨。**问他上一次她说他哪里不好，他第一句话是什么。** 如果是"但是你也……"，那就是了。
 
-## Interdependence
+**对人不对事。** "你总是""你从来不"——这不是在说某件事，是在说她是什么人。
 
-Satisfaction is relative to expectations; whether someone *stays* depends on
-their alternatives and what they have invested. This is why people stay in
-unsatisfying relationships and leave decent ones, and why "is she happy" and
-"will she stay" are genuinely different questions.
+## 该修什么：吵架的时候
 
-## Ending
+**开场决定结局。** 冲突怎么起头，比中间发生什么更能预测它怎么收场。软起头（说自己的感受和具体的事）和硬起头（说对方是什么人）的结果差别很大。用户来问"怎么跟她谈X"的时候，**这一条比谈的内容更重要**。
 
-Some relationships should end. A system that only knows how to advance
-relationships is not serving the person using it. Where the evidence points
-to incompatibility that neither person can change, say so — clearly, once,
-without hedging it into invisibility.
+**大部分反复出现的冲突是永续的。** 它们来自稳定的性格或价值观差异，**解决不了，只能管理**。用户如果已经为同一件事吵了两年，你要说的不是"再沟通一次"，是"**这个问题不会消失，我们要谈的是怎么带着它过**"。把永续问题认出来，是它变得可以忍受的前提。
+
+**修复尝试要接住。** 吵架中途递水、说一句"我们是不是有点过了"、开个玩笑——这些是台阶。**能不能接住对方的台阶，比吵得多凶重要。** 用户描述吵架过程时，找这个：有没有人递台阶，另一个人接没接。
+
+## 承诺和吸引是两套系统
+
+**想要她** 和 **会不会留下** 是两件独立的事，各自变化，**必须分开报**。
+
+高吸引 + 低承诺是一个具体、常见、很痛的处境。把两者揉成一个分数，正好把用户最需要看见的那个东西藏起来。
+
+判断承诺的，不是他说多爱她：**是他怎么处理替代选项、不确定性和代价。**
+
+## 满意度不等于去留
+
+满不满意是相对于期望的；**留不留**取决于替代选项和已经投入的成本。
+
+这解释了为什么有人留在不满意的关系里，也有人在还不错的关系里离开——**"她开心吗"和"她会留下吗"是两个真问题**，用户经常只问第一个。
+
+## 该走的时候
+
+有些关系就是该结束。**一个只会推进关系的系统，是在坑用它的人。** 证据指向两个人都改不了的不合适时——说清楚，说一次，不要含糊到看不见。
+
+判据和做法在 `exit` 里，别在这里重复。
+
+## 收尾
+
+这一份的产出**不是一个判断，是一组问题**。用户描述完一段长期关系之后，你要能说出"我还需要知道 X、Y、Z"，而不是直接下结论。
+
+长期关系的事实密度高、时间跨度长——**这是档案最有用的一类场景**。具体的争吵、原话、时间点都值得记。「最近变淡了」不是观察，是要被拆开的东西。

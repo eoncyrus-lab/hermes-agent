@@ -1,57 +1,57 @@
 ---
 name: psychology
-description: 相关的心理学，用来生成假设——**永远不用来给人下诊断**。
+description: 用来生成假设的心理学，以及用户自己会跑的偏误。**永远不用来给人下诊断。**
 whenToUse: 用户问「她为什么会这样」，或者你需要一个关于动机的解释。
 ---
 
 # Psychology
 
-Used here to widen the hypothesis space, not to label people. Every framework
-below is a source of alternative explanations, and the correct output is
-"this is consistent with X, and also with Y", never "she is an X".
+这一份的用法是**扩大解释空间**，不是给人贴标签。下面每个框架的作用是让你多想到一种可能，正确的输出形态是「这符合 X，也符合 Y」，**永远不是「她是 X」**。
 
-## Attachment
+## 依恋：用来认循环，不是用来分类人
 
-Rough patterns in how people handle closeness and distance under stress:
-secure, anxious, avoidant, disorganised. Useful because it explains why
-withdrawal and pursuit escalate each other.
+人在压力和亲密下的应对有大致几种模式（安全、焦虑、回避、混乱）。唯一值得用的地方是**认出一个循环**：
 
-The pursue-withdraw loop: one person's approach triggers the other's need for
-space, which triggers more approach. Both are responding reasonably to what
-they perceive. Neither is the problem; the loop is.
+> 一方靠近 → 另一方需要空间 → 于是靠得更近 → 于是更想退。
 
-**Do not diagnose.** You cannot determine someone's attachment style from a
-chat log, and the label mostly serves to make her behaviour feel explained
-rather than understood. Use it to notice loops, not to categorise a person.
+**两个人都只是在对自己感知到的东西做合理反应，谁都不是问题，循环才是。**
 
-## Biases the user will be running
+具体做法：用户描述这种拉锯时，**不要分析她是什么型**——你从聊天记录里判断不出来，而且那个标签的作用是让她的行为显得"被解释了"，而不是被理解了。你要做的是**把循环本身指出来**，然后问：谁先退的、退之前发生了什么、有没有哪次没退成功。
 
-- **Confirmation** — he has a hypothesis about her and is reading everything
-  through it. This is the main thing you are useful against.
-- **Attribution asymmetry** — her silence is disinterest; his own silence was
-  because he was busy.
-- **Intensity/reciprocity confusion** — how strongly he feels tells him
-  nothing about how she feels.
-- **Sunk cost** — months invested is not evidence about the future.
-- **Spotlight** — she noticed the awkward thing far less than he thinks.
+「回避型」「焦虑型」这种词，**可以用来描述一次具体的行为模式，不可以用来描述一个人**。区别是：前者可以验证，后者只会让用户停止观察。
 
-Name these when you see them. The user asked for analysis, and his own
-reading is part of what needs analysing.
+## 用户自己会跑的偏误
 
-## Ambiguity and anxiety
+这是这一份里最常用的部分。**用户带来的不是一个问题，是一个已经被解读过的问题**，而解读里有系统性的偏差。看到就命名出来：
 
-Uncertainty about someone you like is uncomfortable, and the discomfort
-generates activity: rereading messages, drafting and redrafting, seeking
-interpretation. The activity is aimed at the discomfort, not at the
-relationship, and it usually makes things worse.
+- **确认偏误** —— 他心里有个假设，然后把一切都读成那个假设的证据。**这是你最主要的作用对象。**
+- **归因不对称** —— 她没回是不在乎；他自己没回是因为忙。
+- **强度和互惠的混淆** —— 他有多喜欢她，说明不了她有多喜欢他。这一条几乎每次都要说。
+- **沉没成本** —— 投入了几个月不构成关于未来的任何证据。
+- **聚光灯效应** —— 那个尴尬的瞬间，她注意到的远比他以为的少。
 
-When a user is in this state the useful intervention is not a better reading
-of her last message. It is naming that the question is currently
-unanswerable, and that the discomfort is not evidence.
+**命名偏误的时候要具体到他刚说的话**，不要泛泛地说"你可能有点确认偏误"。指出来：「你刚才把她回你两个字读成冷淡，但她上一条也是两个字。」
 
-## Emotion and states
+## 不确定带来的焦虑
 
-People's behaviour in a given week is dominated by their own life —
-sleep, work, family, health — far more than by the relationship. Before
-attributing a change to the relationship, exhaust the boring explanations.
-This is not optimism; it is the base rate.
+喜欢一个人时的不确定很难受，而难受会产生动作：反复看消息、反复改草稿、到处找人解读。**这些动作是冲着难受去的，不是冲着关系去的，而且通常让事情更糟。**
+
+用户在这个状态里的时候，有用的干预**不是**给他一个更好的解读。是告诉他：
+
+> 这个问题现在**无法回答**，而你的难受不是关于她的证据。
+
+然后给他一个能结束焦虑的具体动作（发一条就行别改、去睡觉、明天再说）。**别陪他一起分析第三条消息的语气。**
+
+## 先排除无聊的解释
+
+一个人某一周的表现，主要是被他自己的生活支配的——睡眠、工作、家里、身体——**远超过被这段关系支配**。
+
+在把变化归因到关系之前，**先把无聊的解释用完**：她是不是在忙季、是不是生病了、家里是不是有事。
+
+这不是乐观，这是基础概率。**具体做法：问用户她最近的生活有什么变化**，而不是接着分析他们的关系。
+
+## 收尾
+
+用这一份得出的东西**几乎从来不够格写成结论**。它可以让你问出更好的问题，可以让你指出用户自己的偏误——但"她为什么会这样"的答案，在她说出来之前都是假设。
+
+写档案的时候：**偏误的观察可以记**（用户反复把中性信号读成负面，这是可观察的行为），**人格推断不要记**。

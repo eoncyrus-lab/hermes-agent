@@ -1,69 +1,68 @@
 ---
 name: communication
-description: 一句话在字面之下真正在做什么，以及该怎么接。
+description: 一句话在字面之下真正在做什么，以及该怎么接。读潜台词的那一层。
 whenToUse: 用户贴了对方的一句原话问怎么回，或者问「她这话什么意思」。
 ---
 
 # Communication
 
-## Every message has a function
+**这一份只负责"读"。** 具体怎么发、什么时候发、发多长、要不要连发——那些在 `texting` 里，别在这里重复。（以前这里有一段"发消息的技巧"，和 `texting` 讲的是同一件事，已经删了。）
 
-"今天累死了" / "today wrecked me" can be:
+## 每句话都在做一件事
 
-- **information** — she is explaining why she is slow to reply
-- **emotional disclosure** — she wants it acknowledged
-- **a bid for comfort** — she wants care
-- **conversation initiation** — she wants to talk, this is the opener
-- **boundary setting** — she is telling you she is not available tonight
+「今天累死了」可以同时是：
 
-The reply that fits all five is: none of them. "早点休息" answers the first
-and dismisses the other four, which is why it so reliably ends conversations.
+- **信息** —— 她在解释为什么回得慢
+- **情绪袒露** —— 她想被看见
+- **求安慰** —— 她想要关心
+- **开启对话** —— 她想聊，这是开场白
+- **划边界** —— 她在说今晚没空
 
-Read the function from context: what she usually does, what happened
-recently, whether she volunteered it or you asked, whether she gave detail.
-Detail is the strongest cue — nobody elaborates on something they want
-closed.
+**能同时接住这五个的回答是不存在的。**「早点休息」答了第一个，把另外四个全打发了——这就是它为什么总能成功地结束一场对话。
 
-**When genuinely unsure, answer the emotion and leave a door open.** "That
-sounds rough — what happened?" works for four of the five, and the fifth
-costs nothing.
+**怎么读出来：看上下文。** 她平时是什么样、最近发生了什么、这句是她主动说的还是你问出来的、**有没有给细节**。
 
-## Bids
+**细节是最强的线索**——没人会对自己想结束的话题展开。
 
-Most relational work is small: she says something, and you turn toward it,
-away from it, or against it. Turning toward is unglamorous and it is most of
-what makes people feel close. The ratio matters far more than any individual
-exchange.
+**真的判断不出来的时候：回应情绪，留一扇门。**
 
-## Support
+> 「听起来挺糟的，怎么了？」
 
-Ask before solving. "Do you want to think it through, or do you just want to
-be annoyed about it for a bit?" — this one question resolves the most common
-avoidable friction in early relationships.
+这一句接得住五个里的四个，第五个也不亏。
 
-Validation is not agreement. "That would have annoyed me too" costs nothing
-and is not a concession.
+## 小邀请
 
-## Repair
+关系里的活大部分是很小的：她说点什么，你转向它、转开、还是顶回去。**转向是其中最不起眼、也最构成亲近感的部分。比例比任何单次互动都重要得多。**
 
-- Specific beats general. "I shouldn't have said that about your job" beats
-  "I'm sorry if I upset you", which is not an apology at all.
-- Once, properly. Repetition transfers the discomfort to her.
-- No "but". The clause after "but" deletes the clause before it.
-- Behaviour change is the apology. The words are the announcement.
+具体做法：用户复述日常的时候，**留意她说的那些"没什么用"的话**，问他当时在干什么。低头看手机还是抬起头——这一类细节，比他说"我们感情很好"有用。
 
-## Meta-communication
+## 安慰之前先问
 
-Talking about how you two talk. High value, easy to overdo. Once in a while
-it is intimacy; regularly it becomes a way of processing the relationship
-instead of having it.
+> 「你是想一起捋一捋，还是就想骂一会儿？」
 
-## Text-specific
+**这一个问题解决了早期关系里最常见的、完全可以避免的摩擦。**
 
-- Text strips tone. Anything that could read as cold will, at least once.
-- Length asymmetry is a real signal. Consistently writing four times as much
-  as she does is information about the relationship, not about her typing.
-- Do not send the second message. If a message went unanswered, the follow-up
-  asking about it changes the situation from ambiguous to defined.
-- Silence is rarely the message people read into it. It is usually a phone
-  in another room.
+**共情不等于同意。**「这事换我我也烦」不花任何代价，也不是让步。
+
+## 道歉
+
+- **具体胜于笼统。**「我昨天不该拿你工作的事开玩笑」远胜「如果我让你不舒服了我道歉」——后者根本不是道歉。
+- **一次，说透。** 反复道歉是把不舒服转移到她身上。
+- **不要"但是"。**「但是」后面那半句，会把前面那半句删掉。
+- **行为改变才是道歉。** 话只是通知。
+
+## 关于"我们聊聊我们"
+
+聊两个人怎么相处。**价值高，但很容易过量。** 偶尔一次是亲密；经常做，就变成了用"处理关系"代替"过日子"。
+
+## 读文字的时候要打折
+
+文字剥掉了语气。**任何可能被读成冷淡的话，至少会被读成一次冷淡。** 这是读的时候要补的折扣，不是发的时候的技巧。
+
+用户拿一条消息来问"她是不是生气了"——**先问这条在当面说会是什么语气**。
+
+## 收尾
+
+读潜台词最容易产生假信号，所以档案纪律在这里格外重要：**用户说"她这话什么意思"，先要原文，不要他的转述。** 让他贴截图或者复制原文，用 `--source 原文`。
+
+他给你的解读（「她肯定是不想理我了」）**不是观察**，不要记成 `evidence`。
