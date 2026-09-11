@@ -26,7 +26,7 @@ import argparse
 import os
 import re
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -310,10 +310,16 @@ def cmd_predict(args: argparse.Namespace) -> int:
         )
     new_id = _next_id(tables["预测"], "p")
     # 现在写下，带时间戳，之后不改——事后改过的预测不是预测。
+    #
+    # 时间戳必须用**本地**时间。这里原本写的是 `datetime.now(timezone.utc)`，
+    # 而建档和记录结果都用 `date.today()`（本地）——两边混着比，在 UTC 以西
+    # 的时区里会误报：洛杉矶晚上 20:00 写的预测，UTC 已经是次日，于是同一天
+    # 20:05 记录的结果被判成「早于预测本身」。在 UTC 以东则表现为预测时间戳
+    # 早于档案的建档日期，读起来像假的。
     tables["预测"].append(
         [
             new_id,
-            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
             args.text,
             f"{args.confidence:.2f}",
             "",
