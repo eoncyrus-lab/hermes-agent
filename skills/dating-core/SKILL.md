@@ -1,8 +1,7 @@
 ---
 name: dating-core
-description: Early-stage relationship progression — reading interest, escalation, invitation, recovery.
-priority: 90
-triggers: reply, analysis, strategy, invitation, dating
+description: 早期关系的推进——读兴趣、升级、邀约，以及被拒之后怎么收场。
+whenToUse: 关系还在早期，用户在问要不要更进一步、怎么约出来、还有没有戏。
 ---
 
 # Early-stage progression

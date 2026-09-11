@@ -1,8 +1,7 @@
 ---
 name: relationship-science
-description: What actually predicts relationships lasting. Weighted above dating-core once established.
-priority: 85
-triggers: relationship, long-term, conflict, trust, commitment
+description: 什么因素真正预测一段关系能否长久。关系确立之后，权重高于 dating-core。
+whenToUse: 关系已经确立——在一起了、长期了——用户问能不能走下去、怎么修复、怎么面对冲突。
 ---
 
 # Relationship science

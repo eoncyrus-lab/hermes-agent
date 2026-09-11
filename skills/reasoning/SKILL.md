@@ -1,8 +1,7 @@
 ---
 name: reasoning
-description: How to reason about a relationship without inventing things. Applies to every intent.
-priority: 100
-triggers: always
+description: 怎么从证据推到结论，而不发明东西。横切的一层，任何需要判断的场合都适用。
+whenToUse: 材料互相矛盾、线索不够、或者你发现自己在往空白处填东西的时候。
 ---
 
 # Reasoning about people from thin evidence

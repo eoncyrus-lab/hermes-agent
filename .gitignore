@@ -8,7 +8,7 @@ __pycache__/
 #
 # If you set ROMANCE_TARGETS, point it somewhere outside the repo as well --
 # this rule only covers the default location.
-/targets/
+/skills/romance-master/targets/
 
 # The engine era's secrets: provider API keys, the harness vault key, the
 # WeChat bot token. Nothing in the current tree reads this file, but it is

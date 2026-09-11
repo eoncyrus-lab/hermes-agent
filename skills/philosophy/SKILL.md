@@ -1,8 +1,7 @@
 ---
 name: philosophy
-description: The value questions underneath the tactical ones. Not quotations.
-priority: 60
-triggers: should I, is it worth, authenticity, meaning, self-reflection
+description: 战术问题底下的价值问题。不是格言集。
+whenToUse: 用户在问「我该不该」「值不值得」「我是不是有问题」——问题不在怎么做，在要不要做。
 ---
 
 # Philosophy

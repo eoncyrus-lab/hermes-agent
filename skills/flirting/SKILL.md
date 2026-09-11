@@ -1,8 +1,7 @@
 ---
 name: flirting
-description: Modes of flirtation, what each actually does, and how to read whether it landed.
-priority: 80
-triggers: flirt, tension, ambiguity, teasing, reply
+description: 调情的几种模式各自动作是什么，以及怎么判断它有没有落地。
+whenToUse: 有暧昧张力但还没有明确进展，用户在问怎么制造、怎么回应、或者某句话算不算调情。
 ---
 
 # Flirting

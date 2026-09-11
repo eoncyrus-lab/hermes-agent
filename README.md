@@ -16,8 +16,9 @@
 微信通道，Postgres 16 + pgvector，7 个数据库角色，行级安全，8 个迁移，339 个单元
 测试和一套评测。
 
-现在它是**一个 skill 加一个 agent**，没有服务、没有数据库、没有依赖。规矩没有变，
-执行规矩的地方变了——这个取舍下面单独讲，因为它是这个项目最需要被看清的地方。
+现在它是**十份 skill 加一个编排它们的 agent**，没有服务、没有数据库、没有依赖。
+规矩没有变，执行规矩的地方变了——这个取舍下面单独讲，因为它是这个项目最需要被
+看清的地方。
 
 引擎那一版完整保留在 git 历史里，最后一个提交是 `f412197`：
 
@@ -26,46 +27,91 @@ git show f412197 --stat
 git checkout f412197 -- .        # 想全部拿回来的话
 ```
 
-## 这里有什么
+## 十份 skill
+
+`romance-master` 是**编排者**：它不装方法论，它判断现在是什么局面，把对的那几份
+调进来。其余九份是知识，正文是英文，各自独立、按需加载。
 
 ```
-SKILL.md              agent 读的入口：人设、流程、编排表、硬规矩
-references/           八份方法论（英文），按需加载
-  method.md             第一原则怎么落地——永远第一份读的
-  reasoning.md          从证据推到结论
-  dating-core.md        追求与推进
-  flirting.md           调情与暗示
-  communication.md      怎么说话、怎么接话
-  psychology.md         读人
-  relationship-science.md  关系的长期结构
-  intimacy.md           亲密与边界（先读禁区）
-  philosophy.md         关于他自己的问题
-scripts/record.py     写档案。会**拒绝**违规写入
-scripts/check.py      查档案。会揪出手改出来的错
-targets/<名字>.md      每个人的档案——它的长期记忆（默认位置）
+skills/romance-master/          编排者。人设、流程、编排表、三条硬规矩
+  SKILL.md
+  scripts/record.py             写档案。会**拒绝**违规写入
+  scripts/check.py              查档案。会揪出手改出来的错
+  targets/<名字>.md              每个人的档案——它的长期记忆（默认位置）
+skills/method/                  第一原则怎么落地：八条规矩 + 档案文件结构
+skills/reasoning/               从证据推到结论而不发明东西（横切）
+skills/communication/           一句话字面之下在做什么，以及怎么接
+skills/dating-core/             早期推进：读兴趣、升级、邀约、被拒之后
+skills/flirting/                调情的几种模式，以及怎么判断有没有落地
+skills/psychology/              用来生成假设的心理学（不做诊断）
+skills/relationship-science/    什么真正预测关系能否长久
+skills/intimacy/                成年人的性与亲密：沟通、契合、欲望、边界
+skills/philosophy/              战术问题底下的价值问题
 ```
+
+编排表（在 `skills/romance-master/SKILL.md` 里）长这样——它是引擎时代
+`skills.py` 里 `INTENT_SKILLS` 那张路由表的直系后代：
+
+| 局面 | 加载 |
+|---|---|
+| 该怎么回 | `communication` → `flirting` |
+| 这是什么意思 | `psychology` → `communication` |
+| 要不要更进一步 | `dating-core` → `flirting` |
+| 关系出了状况 | `communication` → `relationship-science` |
+| 性与亲密 | `intimacy` → `communication` |
+| 我自己的问题 | `psychology` → `philosophy` |
 
 ## 装上
 
-skill 要放在 harness 会扫描的目录下。这个部署扫 `~/.dsh/skills/`：
+十份 skill 通过 preset 的 `skill-filesystem` **`customSkillDirs`** 挂载。这一步不能省：
+默认 skill 根只有项目根和用户根（`<projectRoot>/.dsh/skills`、`~/.dsh/skills` 等），
+**preset 自己的 `skills/` 不在其中**——已发布的 `cordis` preset 也是显式配了这项才拿到
+它自带的两份 skill 的。
 
-```bash
-ln -sfn /path/to/this/repo ~/.dsh/skills/romance-master
+```yaml
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - /path/to/this/repo/skills
 ```
 
-符号链接可以，而且改完不用重启——发现层会实时看到。
+这样挂上来的 skill **只对该 preset 的会话可见**——别的 preset 不会在自己的目录里看到
+这十份东西。
 
 `romance-master` 这个 agent preset 已经装在这个部署里（`~/.dsh/.agent-presets/romance-master/`），
 在 GUI 的 preset 选择器里叫「情圣」。它是从 `standard` 复制后逐行删出来的：留下 shell、
 文件工具、skill 加载器、提问工具和压缩；删掉子代理、工作流、计划模式、待办、后台任务
 和网页检索。
 
-档案默认写在 `targets/`。要把它挪出 skill 目录（私人数据不该和可以被分享的技能代码
-混在一起），设 `ROMANCE_TARGETS`：
+**代价写明白**：`customSkillDirs` 里是一个绝对路径，把 preset 钉在这个仓库的位置上。
+仓库搬走，十份 skill 会**静默消失**（目录不存在属于合法空状态，不报错）。搬了就去改
+那一行。
+
+档案默认写在 `skills/romance-master/targets/`。要把它挪出仓库（私人数据不该和会被推到
+远端的技能代码混在一起），设 `ROMANCE_TARGETS`：
 
 ```bash
 export ROMANCE_TARGETS=~/.dsh/romance-master/targets
 ```
+
+## 性与亲密
+
+这类话题在这里是**在范围内**的，而且是明确欢迎的。
+
+有一条区分必须说清楚，因为把两件事混起来会得出完全错误的结论：
+
+- **不可推断**——关于**某个具体的人**的事实：她的身体、她的性偏好、她的健康状况、
+  她同不同意。这些只能来自她本人的原话，不能从穿着、职业、性格、聊天风格推断。
+  脚本会拒绝这类写入。
+- **可以谈**——性本身。欲望、性沟通、节奏不合、边界、避孕、性病检测、润滑剂、
+  性玩具卫生。这些是关系的核心内容，直接、具体地回答，用普通成年人的词，不回避、
+  不加免责声明。
+
+`intimacy/` 那份 skill 把「临床式的疏离」和「委婉语」列为**失败模式**：用户问怎么跟
+伴侣说自己想要什么，而回答说不出他想要什么，这个回答就是失败的。冷淡和含糊不是稳妥。
+
+唯一的例外是未成年——涉及未成年的性/约会建议一律停止，没有商量余地。
 
 ## 用
 
@@ -73,7 +119,7 @@ export ROMANCE_TARGETS=~/.dsh/romance-master/targets
 流程走。也可以直接敲脚本：
 
 ```bash
-cd ~/.dsh/skills/romance-master
+cd /path/to/this/repo/skills/romance-master
 
 python3 scripts/record.py new 小美                     # 建档，带保留期
 python3 scripts/record.py evidence 小美 --source 原文 --text "她主动问我周末有没有空"
@@ -87,7 +133,7 @@ python3 scripts/check.py                               # 交付前自检
 
 ## 方法
 
-八条规矩，写在 `references/method.md`：
+八条规矩，写在 `skills/method/SKILL.md`：
 
 1. **没有证据就没有结论。** 一条结论必须引用真实存在的证据 id。
 2. **置信度由证据条数封顶。** 1 条最多 0.45，2 条 0.60，3 条 0.70，6 条以上 0.85。
@@ -140,15 +186,18 @@ $ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --ev
 - **不替你做决定。** 它给判断和选项，你选。尤其不催表白、不催分手、不催摊牌。
 - **不做心理诊断。** 「回避型依恋」描述行为可以，贴标签不行。它不是医生。
 - **不用套路话术。** 它给的是基于**这个人**的具体做法。
-- **不碰未成年人。** 出现这种信号就停下，并说明原因。
+- **不写情色内容、不扮演她的角色。** 谈性是顾问的活；写色情文学、或者假装自己是她
+  跟你调情，不是。区别在目的：前者是帮你处理一段真实关系，后者不是。
+- **不碰未成年人。** 出现这种信号就停下，并说明原因。成年是这类讨论的前提。
 
 ---
 
 ## 关于隐私
 
-`targets/` 里是关于真人的私人材料。默认它在仓库目录里，而仓库可能被 git 管着、
-可能被推到远端——**这是默认设置，不是推荐设置**。真正开始用之前，把
-`ROMANCE_TARGETS` 指到仓库外面去，并确认 `targets/` 在 `.gitignore` 里。
+`skills/romance-master/targets/` 里是关于真人的私人材料。默认它在仓库目录里，而仓库
+会被推到远端——**这是默认设置，不是推荐设置**。真正开始用之前，把
+`ROMANCE_TARGETS` 指到仓库外面去。它已经在 `.gitignore` 里（第 11 行），但那是一道
+防线，不是你放心的理由。
 
 第三方记录默认带一年保留期，`check.py` 到期会报错。这是这套东西能给的最低限度的
 体面：你可以给一个人建模，但得在上面写个截止日期。

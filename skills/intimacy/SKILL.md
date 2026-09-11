@@ -1,8 +1,7 @@
 ---
 name: intimacy
-description: Physical and sexual intimacy between adults — communication, compatibility, desire. Runs on the intimate track.
-priority: 88
-triggers: intimacy, sex, physical, desire, compatibility, boundaries
+description: 成年人之间的身体与性亲密：沟通、契合度、欲望、节奏、边界。给的是直接具体、不回避的回答，不是色情文学。
+whenToUse: 话题涉及性、身体、欲望、亲密节奏或性边界。**成年人与成年人之间**——这类问题在这里是被鼓励问的，不是需要绕开的。
 ---
 
 # Intimacy

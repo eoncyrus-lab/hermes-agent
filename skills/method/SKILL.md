@@ -1,3 +1,9 @@
+---
+name: method
+description: 情圣的第一原则怎么落地：八条不准越过的规矩，外加 targets 档案文件的结构。
+whenToUse: 任何要对某个**具体的人**下结论的场合——也就是几乎所有场合。它规定了别的 skill 给出的判断必须长什么样。
+---
+
 # Method
 
 The rules below are the whole reason this skill exists. Everything else in

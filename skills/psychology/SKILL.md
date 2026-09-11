@@ -1,8 +1,7 @@
 ---
 name: psychology
-description: Relevant psychology, used to generate hypotheses — never to diagnose.
-priority: 70
-triggers: analysis, why did she, self-reflection
+description: 相关的心理学，用来生成假设——**永远不用来给人下诊断**。
+whenToUse: 用户问「她为什么会这样」，或者你需要一个关于动机的解释。
 ---
 
 # Psychology

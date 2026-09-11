@@ -1,8 +1,7 @@
 ---
 name: communication
-description: What a message is doing beneath what it says, and how to answer that.
-priority: 75
-triggers: reply, conflict, support, listening
+description: 一句话在字面之下真正在做什么，以及该怎么接。
+whenToUse: 用户贴了对方的一句原话问怎么回，或者问「她这话什么意思」。
 ---
 
 # Communication
