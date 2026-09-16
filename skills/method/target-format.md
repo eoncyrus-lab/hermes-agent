@@ -1,15 +1,8 @@
-# The shape of a target file
+# 档案文件长什么样
 
-> Loaded on demand. Read this only when you must read a raw archive file
-> or hand-edit one — `record.py` writes them and `show` renders them, so
-> you rarely need the raw format.
+> 按需加载。只有必须手读或手改一份原始档案时才读——平时 `record.py` 写、`show` 读，用不着看原始格式。
 
-Everything above is enforced by `scripts/record.py` writing into one file per
-person under `targets/`. You should almost never edit one by hand — the script
-is the only thing that applies the rules, and `scripts/check.py` exists to
-catch the times you do. This section is here so that when you must read a file
-you know what you are looking at, and when you must hand-edit one you keep it
-parseable.
+`record.py` 把每个人写进 `targets/` 下的一个文件。**几乎永远不要手改**——只有脚本会执行规矩，`scripts/check.py` 就是为了抓手改而存在的。这一节是为了万一要读的时候你知道在看什么，万一要改的时候不把它改坏。
 
 ```markdown
 ---
@@ -17,6 +10,12 @@ name: 小美
 created: 2026-09-12
 retention_until: 2027-09-12
 ---
+
+## 不适
+
+| id | 日期 | 来源 | 内容 |
+|---|---|---|---|
+| u1 | 2026-09-14 | 原文 | 她说"今天先别了，我有点不舒服" |
 
 ## 已知
 
@@ -28,44 +27,44 @@ retention_until: 2027-09-12
 
 | id | 日期 | 来源 | 内容 |
 |---|---|---|---|
-| e1 | 2026-09-12 | 原文 | 她主动问我周末有没有空 |
+| e1 | 2026-09-12 | 原文 | 她：周末有空吗\n我：有啊 \| 怎么了 |
 
 ## 预测
 
-| id | 写于 | 预测 | 置信 | 结果 |
+| id | 写于 | 预测 | 置信 | 证据 | 到期 | 结果 |
+|---|---|---|---|---|---|---|
+| p1 | 2026-09-12 01:07 | 她这周不会主动联系 | 0.45 | e1 | 2026-09-19 | 应验（2026-09-19） |
+
+## 期限
+
+| id | 写于 | 到期 | 内容 | 结果 |
 |---|---|---|---|---|
-| p1 | 2026-09-12 01:07 | 她这周不会主动联系 | 0.45 | 应验（2026-09-12） |
+| d1 | 2026-09-12 01:10 | 2026-12-12 | 三个月内他不改，我就走 |  |
 
 ## 边界
 
-| 命名空间 | 状态 | 依据 |
-|---|---|---|
-| consent.kiss | 未知 | 再说吧（2026-09-12） |
+| 命名空间 | 状态 | 来源 | 依据 |
+|---|---|---|---|
+| consent.kiss | 未知 | 原文 | 再说吧（2026-09-12） |
 ```
 
-Four sections, and each is a different kind of statement:
+六张表，每张是一种不同性质的陈述：
 
-- **已知** is what you have concluded. `值` is a confidence that must not exceed
-  the ceiling for the number of ids in `证据` (rule 2). `轴` must be one of the
-  fourteen in `scripts/record.py`. No protected namespace may appear here.
-- **证据** is the raw material, and the only section that records something
-  rather than concluding something. `来源` is `原文`, `截图` or `口述`, in that
-  order of trust. Identity is `(来源, 内容)`: recording the same thing twice
-  returns the same id and does **not** raise the ceiling.
-- **预测** is frozen at the moment it is written, with a local timestamp.
-  结果 stays empty until `record.py outcome` fills it, once, permanently.
-- **边界** accepts only a quoted statement (`--quote`), and for `consent.*`
-  only one of `同意 | 拒绝 | 硬边界 | 未知`.
+- **不适**：对方表达过的不适、退缩、勉强。排第一，因为它压过一切（method 第 7 条）。
+- **已知**：你的结论。`值` 不能超过 `证据` 里**内容互不相同**的证据条数对应的上限。`轴` 必须是 `record.py` 里 `AXES` 列出的那几个；受保护的命名空间不能出现在这里。
+- **证据**：原始材料，唯一一张「记录」而不是「下结论」的表。`来源` 是 `原文`、`截图`、`口述`，可信度依次降低。**身份是内容**：同一句话记两遍返回同一个 id，不抬高上限。
+- **预测**：写下那一刻冻结，本地时间戳，引用证据，可选到期日。`结果` 由 `record.py outcome` 填一次，永久。
+- **期限**：用户给自己定的期限。没有置信度；到期没结算，自检会报。
+- **边界**：只接受带引述的明确陈述。`consent` 类的状态只能是 `同意 | 拒绝 | 硬边界 | 未知`，其余只能是 `喜欢 | 不喜欢 | 想试 | 不想 | 硬边界 | 明确 | 未知`。只追加，**同一命名空间以最后一条为准**。
 
-Things a reader should notice:
+读的时候要注意：
 
-- The `|---|---|` separator after each header is what tells the parser where
-  data begins. Delete it and the header row is read as a record.
-- `retention_until` is not decoration. A third party's record is meant to
-  expire; `check.py` reports an expired one as a problem rather than letting
-  it sit there.
-- Ids are `e1`, `e2` … and `p1`, `p2` … Hand-written ids that collide with
-  generated ones corrupt the citation graph, which is why renumbering by hand
-  is worse than it looks.
-- A file is one person. There is no field for "us", and no place to put a
-  second name.
+- **单元格是转义过的。** 换行写成 `\n`，内容里的 `|` 写成 `\|`，反斜杠写成 `\\`。手改时照这个规矩写：一个裸的 `|` 会把一格切成两格，列就错位了。
+- **表格外面不要写东西。** 手写的备注、多出来的一节、折行的内容，脚本不去猜它属于哪一行——`check.py` 会报出来，`record.py` 会**拒绝写入**，直到你把它挪进表格或删掉。拒绝是为了不在下一次写入时把它悄悄抹掉。
+- **旧格式**（没有 `## 不适` 这一节的文件）不转义：读的时候反斜杠照字面，被 `|` 切碎或被换行折断的内容会拼回原来那一格，下一次写入时整份文件换成新格式。
+- 每个表头后面的 `|---|` 分隔行告诉解析器数据从哪开始。删掉它，数据行会被当成表头吞掉。
+- 列按**表头名字**对应，不按位置。旧文件缺新加的列没关系，读出来是空值，下次写入时补齐。
+- `retention_until` 不是装饰。第三方的档案本来就该过期，到期 `check.py` 会列成待办；用 `record.py extend` 延期或 `forget` 删除。
+- 结论写错了、或者旧文件里有不该存在的结论（比如推断出来的 `attraction.sexual`），用 `record.py retract` 撤掉，证据保留。
+- id 是 `e1`、`u1`、`p1`、`d1` 这样递增的。手写的 id 和自动生成的撞上，会弄坏引用关系——所以手动重新编号比看上去更糟。
+- 一个文件是一个人。没有「我们」这个字段，也没有放第二个名字的地方。

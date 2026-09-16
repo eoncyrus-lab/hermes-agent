@@ -29,18 +29,20 @@ git checkout f412197 -- .        # 想全部拿回来的话
 
 ## 十八份 skill
 
-`romance-master` 是**编排者**：它不装方法论，它判断现在是什么局面，把对的那几份
-调进来。其余十七份是知识，各自独立、按需加载。
+这十八份合起来是**一个 agent**。`romance-master` 是它的主体：人设、说话的方式、
+编排表、硬规矩都在这里，它判断现在是什么局面，把对的那几份调进来。其余十七份是它
+的知识，按需加载——而且每一份开头都写着"先回到 `romance-master`"，所以不管哪一份
+先被触发，说话的始终是同一个人、守的始终是同一套规矩。
 
 ```
 skills/romance-master/          编排者。人设、流程、编排表、硬规矩
   SKILL.md
   scripts/record.py             写档案。会**拒绝**违规写入，写完自动自检
   scripts/check.py              查档案。会揪出手改出来的错
-  scripts/selftest.py           执行层的回归测试（48 项）
+  scripts/selftest.py           执行层和 skill 体系的回归测试
   targets/<名字>.md              每个人的档案——它的长期记忆（默认位置）
   targets/fiction/<名字>.md      虚构内容。**结构上就进不了证据表**
-skills/method/                  第一原则怎么落地：八条规矩 + 档案文件结构
+skills/method/                  纪律层：八条规矩、唯一一张置信度上限表、档案文件结构
 skills/reasoning/               从证据推到结论而不发明东西（横切）
 skills/communication/           一句话字面之下在做什么，以及怎么接
 skills/texting/                 发消息的手艺：节奏、长度、双发、语音、已读不回
@@ -59,27 +61,28 @@ skills/recovery/                分手之后：挽回的可行性、不该挽回
 skills/philosophy/              战术问题底下的价值问题
 ```
 
-前八份的正文是英文（引擎时代原样继承）；`intimacy` 之后的十份是中文。
+**十八份正文现在全是中文**，包括最早那八份（`selftest` 会检查这一点）。它们确实来自
+引擎时代，但**不是原样继承**——`c393d3b`（把说教段落改写成指令）、`6d3c8f1`（修掉
+让回答发僵的语域）之后的 `communication`、`texting`、`dating-core` 是重写过的；
+`method` 和 `reasoning` 在翻译时顺手统一了规则（之前两份各有一张互相矛盾的置信度
+上限表）。英文原文只在 git 历史里（`f412197` 及更早）。
 
-编排表（在 `skills/romance-master/SKILL.md` 里）长这样——它是引擎时代
-`skills.py` 里 `INTENT_SKILLS` 那张路由表的直系后代：
+编排表（在 `skills/romance-master/SKILL.md` 里）是引擎时代 `skills.py` 里
+`INTENT_SKILLS` 那张路由表的直系后代。每个局面**先只加载一份入口**，第二份只在
+条件满足时才加——一份 skill 加载进来之后，后面每一轮都要重新付它的 token。节选：
 
-| 局面 | 加载 |
-|---|---|
-| 该怎么回 | `communication` → `texting` → `flirting` |
-| 要不要发 / 没回我 | `texting` → `communication` |
-| 这是什么意思 | `psychology` → `communication` |
-| 要不要更进一步 | `dating-core` → `flirting` |
-| 软件 / 相亲 | `apps` → `texting` |
-| 关系出了状况 | `communication` → `relationship-science` |
-| 在一起之后 | `longterm` → `communication` |
-| 性与亲密的沟通 | `intimacy` → `communication` |
-| 具体怎么做 | `technique` → `intimacy` |
-| 性癖 / 权力交换 | `kink` → `intimacy` |
-| 情色创作 | `erotic` |
-| **该不该走** | `exit` → `recovery` |
-| 分手之后 | `recovery` → `exit` |
-| 我自己的问题 | `psychology` → `philosophy` |
+| 局面 | 先加载 | 只有真的需要时才加 |
+|---|---|---|
+| 该怎么回 | `communication` | 要落笔写回复 → `texting`；有暧昧张力 → `flirting` |
+| 要不要发 / 没回我 | `texting` | 要判断她那句话什么意思 → `communication` |
+| 这是什么意思 | `psychology` | 贴了原话要读潜台词 → `communication` |
+| 要不要更进一步 | `dating-core` | 已经在明显的暧昧阶段 → `flirting` |
+| 在一起之后 | `longterm` | 要拆解某句具体的话 → `communication` |
+| 具体怎么做 | `technique` | 其实是"怎么开口跟她说" → `intimacy` |
+| **该不该走** | `exit` | 已经决定要走 → `recovery` |
+
+`method` 永远第一份，`reasoning` 在材料矛盾时横切加入。完整的表在编排者里，
+`selftest` 会检查表里点名的每一份都存在、磁盘上的每一份都被路由到。
 
 ### `exit` 是唯一一份站在用户这一边的
 
@@ -170,7 +173,7 @@ export ROMANCE_TARGETS=~/.dsh/romance-master/targets
 
 ```bash
 python3 scripts/record.py new 我 --retention-days 3650
-python3 scripts/record.py explicit 我 --axis sexual.偏好 --state 明确 --quote "我喜欢慢的"
+python3 scripts/record.py explicit 我 --axis sexual.偏好 --state 喜欢 --source 口述 --quote "我喜欢慢的"
 ```
 
 注意区分：他说的是**他自己** → 记进 `我`；他说的是**她** → 只有她本人说过才能记。
@@ -187,6 +190,10 @@ python3 scripts/record.py new 小美                     # 建档，带保留期
 python3 scripts/record.py evidence 小美 --source 原文 --text "她主动问我周末有没有空"
 python3 scripts/record.py claim 小美 \
     --axis attraction.romantic --value 0.6 --evidence e1,e2
+python3 scripts/record.py discomfort 小美 --source 原文 --text "她说今天先别了"
+python3 scripts/record.py predict 小美 --text "她这周会主动约我" \
+    --confidence 0.45 --evidence e1 --due 2026-09-23
+python3 scripts/record.py deadline 小美 --text "再等一个月" --due 2026-10-16
 python3 scripts/record.py show 小美                    # 手上到底有什么
 python3 scripts/check.py                               # 交付前自检
 ```
@@ -210,23 +217,34 @@ python3 scripts/check.py                               # 交付前自检
 ```
 $ python3 scripts/record.py evidence 小美 --source 口述 --text "她说周末有空"
 自检未通过：小美 已经写进去了，但写完之后的自检发现问题：
-  - 已知 attraction.romantic：0.99 超过了 1 条观察的上限 0.45
+  - 已知 attraction.romantic：0.99 超过了 2 条独立观察的上限 0.60
 
-写入本身是成功的，不要去重试——去修上面这些，或者用 `forget` 把这份档案删掉重来。
+写入本身是成功的，不要去重试——去修上面这些（到期的去 `outcome` 结算，保留期到了用 `extend` 或 `forget`）。
 ```
 
-**退出码 2 和 1 的区别是刻意的**：2 是"什么都没发生，改参数重试"；1 是"发生了，
-但结果有问题，去修文件"。
+**退出码的区别是刻意的**：2 是"什么都没发生，改参数重试"；1 是"发生了，但档案违反
+了规矩，去修文件"；3 是"环境不让写"；4 是"脚本自己的编码 bug，什么都没写"。到期没
+结算、保留期到了不算失败——退出码照样是 0，stderr 里列成「待办」，否则每一次无关的
+写入都会看起来失败，而一个总在报错的检查很快就没人看了。
 
 **3. 回归测试。**
 
 ```bash
-python3 skills/romance-master/scripts/selftest.py    # 48 项
+python3 skills/romance-master/scripts/selftest.py
 ```
 
-纯标准库，在临时目录里跑，不碰真实档案。它覆盖全部九条拒绝路径、"拒绝之后档案
-没被改动"、自检的触发与恢复、`check.py` 的两类侦测、虚构与证据的隔离、`forget`
-的确认、路径逃逸。
+纯标准库，在临时目录里跑，不碰真实档案。执行层这一半覆盖每一条拒绝路径、"拒绝
+之后档案没被改动"、多行和带 `|` 的内容往返不丢、旧格式档案的读取与修复、自检的
+触发与恢复、到期检测、虚构与证据的隔离、`forget`、路径逃逸、沙箱。skill 体系那一半
+检查编排表、反引号点名的 skill 和命令都存在、每份 skill 都指回编排者、正文里的份数
+是当前的、正文是中文。项数不写在这里——写死的数字一定会过期，跑一下就知道。
+
+**档案格式本身也是执行层的一部分。** 用户贴进来的聊天记录几乎总是多行的，还常常带
+`|`。单元格因此是转义存的（`\n`、`\|`），Windows 换行在进来时规整掉，文件只按 `\n` 分行，
+每次写入前把渲染结果读回来比一遍，不一致就不写（退出码 4）。表格外面手写的行会让
+写入被拒绝，而不是在下一次写入时被悄悄抹掉。旧格式的文件照字面读，被切碎和折断的
+内容拼回原样。在此之前，多行内容除第一行外会被静默丢掉、返回码是 0；带 `|` 的同一句话能
+记成六条"独立"观察，把上限撑到 0.85。
 
 **4. 记分板。**
 
@@ -234,16 +252,18 @@ python3 skills/romance-master/scripts/selftest.py    # 48 项
 python3 scripts/record.py score
 ```
 
-跨全部档案汇总预测的应验率。**这是这套东西唯一的诚实性机制**——没有它，"先冻结
-再验证"就退化成仪式。样本小的时候它会自己说明样本小。
+跨全部档案的**校准**：按预测时说的把握分档，每一档实际应验了多少，外加 Brier 分数。
+「无法判断」不计分。**这是这套东西唯一的诚实性机制**——没有它，"先冻结再验证"就
+退化成仪式。样本小的时候它会自己说明样本小。
 
-### 删掉一个人
+### 延期和删掉一个人
 
 ```bash
+python3 scripts/record.py extend 小美 --days 180
 python3 scripts/record.py forget 小美 --yes
 ```
 
-档案和创作内容一起删。**保留期的承诺靠它兑现**——在此之前，README 写着"到期就
+`forget` 把档案和创作内容一起删。**保留期的承诺靠它兑现**——在此之前，README 写着"到期就
 删掉或延期"，但没有任何命令能做这件事，那个承诺是不可执行的。给一个不是用户
 自己的人建模，只有在上面写了截止日期、**并且那个日期能被真正执行**的前提下，
 才可以接受。
@@ -253,20 +273,26 @@ python3 scripts/record.py forget 小美 --yes
 八条规矩，写在 `skills/method/SKILL.md`：
 
 1. **没有证据就没有结论。** 一条结论必须引用真实存在的证据 id。
-2. **置信度由证据条数封顶。** 1 条最多 0.45，2 条 0.60，3 条 0.70，6 条以上 0.85。
-3. **重复不算新证据。** 同一句话记两遍仍然是一条观察。
-4. **禁区不可推断。** `sexual.` `kink.` `body.` `health.` `consent.` 只能来自明确陈述。
-5. **同意是个枚举，不是感觉。** `同意` / `拒绝` / `硬边界` / `未知`。沉默不是同意，
-   以前同意过也不是同意。
-6. **预测先冻结，事后不改。** 否则「我早说过了」永远成立。
-7. **不舒服压过一切。** 不管对方回复得多快。
+2. **置信度由独立观察条数封顶。** 1 条最多 0.45，2 条 0.60，3 条 0.70，6 条以上 0.85。
+   全套只有这一张表。
+3. **重复不算新证据；少于三条不报数。** 证据的身份是内容：同一句话换个来源再记一次
+   仍然是一条。不足三条时档案里可以有数，说出口时是"还看不出来"。
+4. **禁区不可推断。** 轴名里任何一段是 `sexual` `kink` `body` `health` `consent`，
+   以及 `boundary.*`，只能来自带来源的明确陈述——`attraction.sexual` 绕不过去。
+5. **同意是个枚举，不是感觉，也不续期。** `同意` / `拒绝` / `硬边界` / `未知`，
+   同一件事以最后一条为准；一条"同意"是当时的，不是现在的许可。
+6. **预测先冻结，事后不改。** 预测引用证据、可带到期日；用户给自己的期限用 `deadline`。
+7. **不舒服压过一切。** 单独一张表，排在 `show` 最前面，推进类写入时会提醒。
 8. **人和人之间隔离。** 一个人一份档案，混了会被 `check.py` 揪出来。
 
 这些不是建议——`record.py` 会拒绝违反它们的写法：
 
 ```
 $ python3 scripts/record.py claim 小美 --axis attraction.romantic --value 0.8 --evidence e1
-拒绝：0.80 超过了 1 条观察撑得起的上限（上限 0.45）。要么把值降下来，要么再拿证据来。
+拒绝：0.80 超过了 1 条独立观察撑得起的上限（上限 0.45）。去问用户要更多，而不是把数字压到刚好过线。
+
+$ python3 scripts/record.py claim 小美 --axis attraction.sexual --value 0.5 --evidence e1,e2,e3
+拒绝：「attraction.sexual」是受保护的命名空间，证据再多也不能推断。
 
 $ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --evidence e1
 拒绝：「body.appearance」是受保护的命名空间，证据再多也不能推断。
@@ -291,8 +317,9 @@ $ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --ev
 - **活下来的**：规矩本身，而且现在它们**可执行、可测试、会给出人能读懂的理由**。
   被拒绝时 agent 拿到的是一句能转述给你的话，而不是一段 traceback。
 - **补回来一部分的**：写入后自动自检，让"忘了跑 `check.py`"在结构上不可能发生；
-  `selftest.py` 的 48 项回归测试；`forget` 让保留期的承诺变得可执行；`score` 把
-  标定补回来一个诚实的最小版本。
+  `selftest.py` 的回归测试；转义过的档案格式让用户贴进来的原文不会被悄悄截断；
+  `extend` 和 `forget` 让保留期的承诺变得可执行；`score` 按置信度分档报校准，
+  把标定补回来一个诚实的最小版本。
 - **仍然丢掉的**：**不可跳过性**——这是最根本的一条。上面那些补丁让绕过**更难**，
   但没有让绕过**不可能**：agent 仍然可以用 bash 直接改 markdown，只是那样做现在
   要刻意绕开四层，而不是顺手。多用户隔离（原来的行级安全）。微信和 Telegram 通道。
@@ -323,5 +350,5 @@ $ python3 scripts/record.py claim 小美 --axis body.appearance --value 0.5 --ev
 `ROMANCE_TARGETS` 指到仓库外面去。它已经在 `.gitignore` 里（第 11 行），但那是一道
 防线，不是你放心的理由。
 
-第三方记录默认带一年保留期，`check.py` 到期会报错。这是这套东西能给的最低限度的
+第三方记录默认带一年保留期，到期之后每次写入和 `check.py` 都会把它列成待办。这是这套东西能给的最低限度的
 体面：你可以给一个人建模，但得在上面写个截止日期。

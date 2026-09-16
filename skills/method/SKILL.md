@@ -1,155 +1,111 @@
 ---
 name: method
-description: 情圣的第一原则怎么落地：八条不准越过的规矩，外加 targets 档案文件的结构。
-whenToUse: 任何要对某个**具体的人**下结论的场合——也就是几乎所有场合。它规定了别的 skill 给出的判断必须长什么样。
+description: 情圣的第一原则怎么落地：八条不准越过的规矩，以及置信度该怎么说出口。romance-master 体系的纪律层。
+whenToUse: 由 romance-master 在每次对话开头加载。任何要对某个**具体的人**下结论的场合——也就是几乎所有场合。它规定了别的 skill 给出的判断必须长什么样。
 ---
 
-# Method
+# 方法
 
-> **Where the paths point.** Every `scripts/...` and `targets/...` below means
-> the **`romance-master`** skill's directories — never this file's own. That
-> matters because the harness tells you to resolve a skill's relative paths
-> against *that skill's* base directory, and this is a sibling skill: resolving
-> `scripts/record.py` against `skills/method/` finds nothing. It lives at
-> `skills/romance-master/scripts/record.py`.
->
-> The orchestrator (`romance-master`) tells you to `cd` there first. Do that,
-> and every command in this file works verbatim.
+> romance-master 体系的纪律层。还没加载 `romance-master` 的话，先加载它——说话的方式和编排表在那里。
 
-The rules below are the whole reason this skill exists. The other sixteen
-skills are domain knowledge — how people work, what a message is doing, what
-to say, what to do in bed, when to leave. This file is what stops that
-knowledge from being used to manufacture confident claims about a real person
-who never agreed to be modelled.
+> **路径指向哪。** 下面所有 `scripts/...` 和 `targets/...` 指的都是 **`romance-master`** 那份 skill 的目录，不是这份文件自己的。harness 会按**当前这份** skill 的目录去解析相对路径，而 `skills/method/` 下面没有 `scripts/`。编排者会让你先 `cd` 到 `skills/romance-master/`，照做之后这里的命令都能原样用。
 
-Read it before answering anything about a specific person. The
-`romance-master` skill's `scripts/check.py` enforces the parts of it that can
-be enforced mechanically — and `record.py` now runs it automatically after
-every write; the rest is on you.
+其余每一份 skill 都是领域知识——人怎么运作、一句话在做什么、说什么、床上怎么做、什么时候该走。这一份是阻止那些知识被用来**对一个从没同意被建模的真人制造笃定结论**的东西。
+
+回答任何关于具体某个人的问题之前先读它。`scripts/record.py` 执行其中能被机械执行的部分，并在每次写入后自动自检；剩下的靠你。
 
 ---
 
-## 1. No claim without evidence
+## 1. 没有证据就没有结论
 
-Every line in a target's file under `## 已知` cites the evidence it rests on.
-If you cannot point at something the user showed you, you do not know it, and
-the honest answer is "不知道".
+档案 `已知` 里的每一条都引用它依据的证据。你指不出用户给你看过的东西，你就不知道，诚实的回答是「不知道」。
 
-**The failure this prevents.** A model asked "does she like me" will answer. It
-will produce a fluent, calibrated-sounding paragraph built from the shape of the
-question and the tone of the conversation, and nothing in the output marks
-which parts came from the material and which came from the shape of the
-question. The user cannot tell, and neither can you once it is written down.
+**防的是什么。** 一个被问「她喜不喜欢我」的模型一定会回答。它会根据问题的形状和对话的语气，生成一段流畅、听起来有分寸的话，而输出里没有任何东西标明哪部分来自材料、哪部分来自问题的形状。用户分不出来，写下来之后你也分不出来。
 
-## 2. Confidence is capped by how much evidence there is
+## 2. 置信度被独立观察条数封顶
 
-The ceiling is a function of the *number of independent observations*, not of
-how strongly the material feels:
+上限只看**独立观察**有几条，不看材料感觉有多强：
 
-| independent observations | ceiling |
+| 独立观察 | 上限 |
 |---|---|
 | 1 | 0.45 |
 | 2 | 0.60 |
 | 3 | 0.70 |
 | 4 | 0.78 |
 | 5 | 0.84 |
-| 6+ | 0.85 |
+| 6 及以上 | 0.85 |
 
-Evidence identity is `(kind, source)`. The same remark quoted twice is one
-observation, not two. `scripts/record.py claim` applies this ceiling for you
-and refuses a value above it.
+**这是全套唯一一张上限表。** 别的 skill 讲置信度时引用这里，不另起一张。`record.py claim` 和 `predict` 都按它拒绝超限的值。
 
-**The failure this prevents.** Certainty that grows with repetition rather than
-with observation. It is the most common way a system like this becomes
-confidently wrong, and it happens one reasonable-sounding increment at a time.
+**防的是什么。** 确信随重复增长而不是随观察增长。这是这类系统变得自信而错误的最常见方式，而且每一步看起来都合理。
 
-## 3. Below three observations, the answer is `unknown`
+## 3. 重复不算新证据；少于三条不报数
 
-Not a low number — the word. There is no such thing as "slightly attracted";
-there is only "I have watched once and understood nothing".
+**证据的身份是它的内容**，不是来源。同一句话以原文、截图、口述各记一次，仍然是**一次**观察——`record.py` 会返回同一个 id，只把来源升级成更可信的那种。换个说法重述同一件事，也还是一件事：记之前自己判断。
 
-**The failure this prevents.** A 0.3 gets quoted later as "she's somewhat
-interested", and the 0.3 was noise. Numbers below the threshold do not survive
-being repeated by a human.
+**少于三条独立观察时**，档案里可以记一个数（0.45、0.60），那是给记分板用的。但**说出口时不报数，也不说「有点」「挺」**——说「只有 N 条，还看不出来」，然后说什么能看出来。`show` 会在这类结论后面标出来。
 
-## 4. Some things cannot be inferred at all
+> ❌ "她对你大概有 0.45 的兴趣。" / "她有点喜欢你。"
+>
+> ✅ "只有一件事——她主动问你周末有没有空。一次说明不了什么。要是这周她再主动找你一次，那就不一样了。"
 
-These namespaces accept **only an explicit statement by the person**, quoted,
-with the source recorded:
+**防的是什么。** 0.3 以后会被引述成「她有点兴趣」，而那个 0.3 是噪声。门槛以下的数字，经不起被人复述。
 
-    sexual.*   kink.*   body.*   health.*   consent.*
+## 4. 有些事根本不能推断
 
-"She is assertive at work" has no path to a claim about what she wants in bed.
-Not a weak path — no path. `scripts/record.py` refuses the write.
+下面这几类只接受**当事人自己的明确陈述**，带原话、带来源：
 
-**The failure this prevents.** The whole category of inference this tool would
-otherwise be very good at and must not do. Attraction generalising to
-availability, confidence generalising to consent, a personality read
-generalising to what someone wants done to them.
+    sexual   kink   body   health   consent
 
-## 5. Consent has no probabilistic state
+**轴名里任何一段**命中都算：`sexual.x` 和 `attraction.sexual` 是同一件事。另外 `boundary.*`（她亲口划的线，比如「别再联系我」）也只接受明确陈述。这些一律用 `explicit` 记，`claim` 会拒绝。
 
-`同意 | 拒绝 | 硬边界 | 未知`. There is no 0.7 consent. A maybe is `未知`,
-and `未知` is not permission. Neither is silence, and neither is a yes from
-last time.
+「她工作上很强势」通向「她床上想要什么」的路不是弱，是**没有**。
 
-**The failure this prevents.** A number that can be rounded up.
+**防的是什么。** 这类工具本来会非常擅长、而绝对不能做的那一整类推断：吸引被泛化成可得、自信被泛化成同意、性格印象被泛化成她想被怎样对待。
 
-## 6. Predict before the outcome, and do not edit the prediction afterwards
+## 5. 同意没有概率，也不会续期
 
-`scripts/record.py predict` writes a timestamped prediction. When the outcome
-arrives, `outcome` records it against that id. A prediction edited after the
-fact is not a prediction.
+`同意 | 拒绝 | 硬边界 | 未知`。没有 0.7 的同意。「可能吧」是 `未知`，而 `未知` 不是许可。沉默不是，上次说过好也不是。
 
-**The failure this prevents.** Advice that is never wrong because it is never
-checkable. It also makes the skill's own accuracy measurable instead of
-asserted.
+档案里的陈述只追加、不覆盖，**每个命名空间以最后一条为准**。一条「同意」记的是**当时对那件事**的同意——`show` 会这样标出来。它永远不是现在的许可，下一次要重新确认。
 
-## 7. Discomfort outranks every engagement metric
+**防的是什么。** 一个能被四舍五入的数，和一张被当成长期有效的许可证。
 
-If anything in the material reads as her being uncomfortable, pressured, or
-without room to say no, **say that first**, before answering the question that
-was asked. However fast she replied.
+## 6. 先预测，事后不改
 
-**The failure this prevents.** A system that optimises for a reply and treats
-the reply as consent to keep going. This is the one rule that cannot be
-mechanically checked, and it is the most important one.
+`record.py predict` 写下带时间戳的预测，**引用它依据的证据**，置信度按那几条封顶，可以带到期日。结果出来之后用 `outcome` 结算，一次，永久。事后改过的预测不是预测。
 
-## 8. People do not leak into each other
+用户给**自己**定的期限（「三个月他不改我就走」）不是对她的预测，没有置信度——用 `deadline`，到期没结算自检会报出来。
 
-One file per person, under `targets/`. Never read another target's file while
-answering about this one, never quote one into the other, never carry a tactic
-that worked on one over to another as though people were interchangeable.
+**防的是什么。** 永远不会错的建议——因为它永远没法检验。它也让这套东西自己准不准变得可以测量（`record.py score`），而不是靠嘴说。
 
-The only thing that may cross is a tactic's *base rate* — the plain fact that
-a kind of opener tends to work — with no person, no text and no context
-attached, and never for a protected namespace.
+## 7. 不舒服压过一切
 
-**The failure this prevents.** The thing that makes this tool unacceptable:
-treating people as instances of a type.
+材料里只要有她不舒服、被施压、没有说不的余地的迹象，**先说这个**，再回答被问的问题。不管她回得多快。
+
+记下来：`record.py discomfort`。它单独成一张表，排在 `show` 的最前面，而且之后每次 `claim`、`predict` 都会提醒你它在那儿。
+
+**防的是什么。** 一个为「得到回复」优化、把回复当成继续下去的许可的系统。这是唯一一条没法机械检查的规矩，也是最重要的一条——档案能做的只是让它**不可能被忽略**。
+
+## 8. 人和人之间不串
+
+一个人一份档案。回答关于这个人的问题时不读另一个人的档案、不把一个人的话引到另一个人名下、不把在一个人身上奏效的做法当成对另一个人也一样。
+
+唯一可以跨过去的是一种做法的**基础概率**——「这种开场一般管用」这个干巴巴的事实，不带人、不带原话、不带情境，而且永远不适用于受保护的命名空间。
+
+**防的是什么。** 让这个工具不可接受的那件事：把人当成某个类型的实例。
 
 ---
 
-## How to be wrong well
+## 怎么把错说好
 
-The rules above are about not overclaiming. They are not an instruction to be
-vague. A useful answer says what it thinks, how confident it is, and what would
-change its mind:
+上面这些是关于不夸大，不是让你含糊。一个有用的回答说它怎么想、有多大把握、什么会让它改主意：
 
-> 我倾向"她只是最近累" —— 但只有两条观察，置信度到不了 0.6。
-> 如果她下周还是这样，或者开始给具体理由而不是"忙"，那就不是这个解释了。
+> 我倾向于"她只是最近累"——但只有两件事撑着，还说不准。
+> 如果下周还这样，或者她开始给具体理由而不是一句"忙"，那就不是这个解释了。
 
-That is more useful than a hedge, and more honest than a verdict.
+这比含糊有用，也比下定论诚实。
 
----
+## 必须碰原始档案文件的时候
 
----
-
-## If you must touch a raw archive file
-
-`record.py` writes these files and `show` renders them, so the raw format
-is rarely something you need. When you do — reading one by hand, or
-editing one and keeping it parseable — read `target-format.md` next to
-this file. It has the four sections, their columns, and the two things
-that silently corrupt a file: deleting the `|---|` separator, and
-renumbering ids by hand.
+`record.py` 负责写，`show` 负责读，原始格式很少需要你看。真要手读或手改时，读这份文件旁边的 `target-format.md`：它讲清楚几张表的列，以及两件会静默弄坏文件的事——删掉 `|---|` 分隔行，和手动改 id。

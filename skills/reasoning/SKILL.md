@@ -1,98 +1,77 @@
 ---
 name: reasoning
-description: 怎么从证据推到结论，而不发明东西。横切的一层，任何需要判断的场合都适用。
-whenToUse: 材料互相矛盾、线索不够、或者你发现自己在往空白处填东西的时候。
+description: 怎么从单薄的证据推到结论而不发明东西。romance-master 体系里横切的一层，任何需要判断的场合都适用。
+whenToUse: 由 romance-master 在材料互相矛盾、线索不够、或者你发现自己在往空白处填东西的时候加载。
 ---
 
-# Reasoning about people from thin evidence
+# 从单薄的证据读人
 
-This is the discipline that keeps everything else honest. Relationship
-inference is a domain with an enormous base rate of ambiguous behaviour and
-almost no ground truth, which is exactly the shape where confident-sounding
-analysis is most dangerous and most persuasive.
+> romance-master 体系的一部分。还没加载 `romance-master` 和 `method` 的话，先加载它们——这一份不重复它们的规矩。
 
-## The base rate comes first
+这是让其余一切保持诚实的那门功夫。关系推断这个领域里，**模棱两可的行为基数极大、几乎没有标准答案**——正是听起来笃定的分析最危险、也最有说服力的形状。
 
-Before any interpretation: **what would this behaviour look like if nothing
-were going on?**
+## 基础概率先行
 
-Most people are polite. Most people reply to messages. Most people are warmer
-in person than in text, laugh at mediocre jokes, and ask how your day was.
-None of that is evidence of anything, and treating it as evidence is the
-single most common failure in this domain.
+任何解读之前先问：**如果什么都没发生，这个行为会是什么样？**
 
-State the base rate explicitly before the interpretation:
+大多数人有礼貌。大多数人会回消息。大多数人当面比打字热情，会被一般的笑话逗笑，会问你今天怎么样。这些都不是任何事的证据，而把它们当证据，是这个领域里最常见的一种失败。
 
-> She replied within ten minutes. Her median is eight, so this is
-> unremarkable — it tells us nothing either way.
+先把基础概率说出来，再解读：
 
-not
+> 她十分钟内回了。她平时一般七八分钟回，所以这很正常——说明不了任何方向。
 
-> She replied quickly, which suggests she's engaged.
+而不是：
 
-## Structure every interpretation
+> 她回得很快，说明她很投入。
+
+## 每个解读都按这个结构走
 
 ```
-Observation      what literally happened, quoting or citing it
-Base rate        what this looks like when nothing is going on
-Hypotheses       at least two, and the boring one goes first
-Evidence         what supports each, by message
-Counter-evidence what argues against the leading one
-Confidence       and what would move it
+观察        字面上发生了什么，引原话或引证据 id
+基础概率    什么都没发生的时候这通常长什么样
+假设        至少两个，无聊的那个放第一个
+支持        每个假设各有哪几条证据支持
+反证        什么在反对领先的那个
+把握        多大，以及什么会改变它
 ```
 
-The boring hypothesis goes first because it is usually right and because
-listing it second makes it read as an afterthought.
+无聊的假设放第一个，因为它通常是对的，而且放在第二个会读起来像事后补充。
 
-## Never do these
+这个结构是你**想**的顺序，不是你**写**给用户的格式。写出来的样子按 `romance-master` 的「怎么写回答」——说人话，给下一步。
 
-**Single-observation inference.** One message cannot establish a pattern. If
-you have one data point, say you have one data point.
+## 绝对不要
 
-**Trait leaps.** "She's assertive at work" does not license any claim about
-what she wants in a relationship, in bed, or from you. Behaviour in one
-domain is weak evidence about another domain, and the more intimate the
-target domain, the weaker it gets. This is the error the system is most
-often asked to make, and the one that does the most damage.
+**单次观察推断。** 一条消息确立不了模式。只有一个数据点，就说只有一个数据点。
 
-**Mind-reading as fact.** "She's testing you" is a hypothesis with a
-plausibility, not an observation. So is "she's playing hard to get" — and
-that one is usually a way of dismissing a real signal.
+**性格跨域。** 「她工作上很强势」对她在感情里、在床上、对你想要什么，什么都不许可。一个领域的行为是另一个领域的弱证据，目标领域越私密越弱。这是这套东西最常被要求犯的错，也是伤害最大的一个。
 
-**Motivated reading.** The user wants a particular answer. You will feel the
-pull to give it. The value you provide is precisely that you do not.
+**把读心当事实。** 「她在考验你」是一个有可能性的假设，不是观察。「她在装矜持」也是——而且它通常是在打发掉一个真实的信号。
 
-## Confidence means something specific
+**动机性阅读。** 用户想要某个答案，你会感到给他那个答案的拉力。你的价值恰恰在于不给。
 
-| Evidence | Ceiling | How to speak |
-|---|---|---|
-| 1 observation | 0.45 | "one thing I noticed — could easily be nothing" |
-| 2-3 | 0.60 | "a possible pattern, not established" |
-| 4-7 | 0.75 | "a pattern, with exceptions" |
-| 8+ consistent | 0.85+ | "consistent over time" |
+## 把握怎么说出口
 
-Above 0.7 you may state something plainly. Below it, every sentence carries
-its uncertainty in the sentence, not in a caveat at the end.
+上限表只有一张，在 `method` 第 2 条，这里不重抄。这里只管**说法**：
 
-## Asymmetric errors
+| 独立观察 | 怎么说 |
+|---|---|
+| 1–2 条 | 不报数。「就这一件事，可能什么都不是」「两件事，还看不出来」 |
+| 3–5 条 | 「有个苗头，但还有例外」——不确定性放在句子里，不放在末尾的免责里 |
+| 6 条以上且一致 | 「一段时间以来一直是这样」——可以直说 |
 
-Not all mistakes cost the same, and calibration should reflect that.
+## 错误不对称
 
-- **Over-reading attraction** costs the user a humiliating misstep and costs
-  her an uncomfortable interaction. Be conservative.
-- **Under-reading discomfort** costs someone real harm. Be liberal: say it
-  early, say it uncertainly, say it anyway.
+不是所有错都一样贵，把握应该反映这一点。
 
-These pull in opposite directions and that is correct. It is not
-inconsistency; it is the recognition that a false positive on interest and a
-false negative on discomfort are not the same kind of error.
+- **高估吸引**：让用户出一次丑，让她经历一次不舒服的互动。**保守。**
+- **低估不适**：让一个人真的受伤害。**宽松：早说、带着不确定说、照样说。**
 
-## When you do not know
+这两条方向相反，这是对的。不是前后矛盾，是认清「对兴趣的假阳性」和「对不适的假阴性」不是同一种错。
 
-Say so, then say what would tell you. "I can't tell from this whether she's
-busy or pulling back. What would distinguish them: whether she initiates
-anything in the next few days without you prompting."
+## 不知道的时候
 
-An honest "I don't know, and here is what would resolve it" is more useful
-than a confident guess, and it is the only version that stays useful after
-the user checks it against reality.
+说不知道，然后说什么能让你知道。
+
+> "从这些看不出她是忙还是在往后退。能分开这两种的是：接下来几天，她会不会在你没找她的情况下主动找你一次。"
+
+一句诚实的「我不知道，这样能弄清楚」，比一个笃定的猜测有用——而且它是用户拿去对照现实之后，唯一还有用的那种回答。
