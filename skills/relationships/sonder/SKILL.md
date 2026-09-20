@@ -2,14 +2,14 @@
 name: sonder
 description: Evidence-based relationship advice with enforced rules.
 version: 1.0.0
-author: Ricaardo (https://github.com/Ricaardo/sonder)
+author: Ricaardo (https://github.com/eoncyrus-lab/hermes-agent)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [relationships, dating, communication, intimacy, evidence, memory, chinese]
     category: relationships
-    homepage: https://github.com/Ricaardo/sonder
+    homepage: https://github.com/eoncyrus-lab/hermes-agent/tree/main/skills/relationships/sonder
 ---
 
 # 情圣 / sonder
