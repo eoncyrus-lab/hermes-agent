@@ -12,6 +12,7 @@
     record.py new <名字> [--retention-days N]
     record.py extend <名字> --days N
     record.py list
+    record.py migrate [--from 旧目录] [--keep-source]
     record.py show <名字>
     record.py evidence <名字> --source 原文 --text "她说……"
     record.py discomfort <名字> --source 原文 --text "她说有点不舒服"
@@ -46,17 +47,24 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _targets_dir() -> Path:
-    """档案放哪儿。
+    """档案放哪儿：`ROMANCE_TARGETS`，否则 `~/.romance-master/targets`。
 
-    默认在 skill 目录里，仓库自用时最省事。但档案是**关于真人的私人数据**，
-    而 skill 目录是可以被复制、分享、被 git 管着的——所以用一个环境变量
-    允许把它挪出去。
+    **不能在 skill 目录里。** 装成 Claude Code 或 Codex 插件之后，skill 目录是
+    一个带版本号的缓存（`~/.claude/plugins/cache/…`、`~/.codex/plugins/cache/…`），
+    每次更新换一个新目录，旧的过些天就被删——档案放在那里，一次更新就没了。
+    而且档案是关于真人的私人数据，不该和会被复制、分享、推到远端的技能代码
+    放在一起。
+
+    默认目录是固定的一个，所以 Claude Code、Codex、dsh 读写的是同一份记忆。
     """
     override = os.environ.get("ROMANCE_TARGETS", "").strip()
-    return Path(override).expanduser() if override else ROOT / "targets"
+    return Path(override).expanduser() if override else Path.home() / ".romance-master" / "targets"
 
 
 TARGETS = _targets_dir()
+
+# 旧版的默认位置。只用来提醒迁移，永远不再往里写。
+LEGACY_TARGETS = ROOT / "targets"
 
 # 虚构内容单独放一个子目录，**不在 `targets/` 根下**。`TARGETS.glob("*.md")`
 # 是档案的枚举方式，创作文件放在根下会被当成一份档案读进来。有了这个目录，
@@ -254,8 +262,12 @@ def path_for(name: str) -> Path:
 
 
 def _ensure_dir(path: Path) -> None:
+    # 关于真人的私人数据：新建的目录只给当前用户读写
     try:
-        path.mkdir(parents=True, exist_ok=True)
+        missing = [d for d in (path, *path.parents) if not d.exists()]
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for d in missing:
+            d.chmod(0o700)
     except OSError as exc:
         raise Unwritable(_unwritable_message(path, exc)) from exc
 
@@ -264,11 +276,14 @@ def _unwritable_message(path: Path, exc: OSError) -> str:
     return (
         f"{path} 写不进去。\n"
         f"  {type(exc).__name__}: {exc}\n\n"
-        "这几乎总是**沙箱**：会话的 `workspace-write` 策略只允许改工作区内的文件。\n"
-        "三个办法，任选一个：\n"
-        "  1. 用仓库根作为这个会话的工作区\n"
-        "  2. export ROMANCE_TARGETS=<工作区内的目录>\n"
-        "  3. 这个会话改用 danger-full-access 权限\n\n"
+        "这几乎总是**沙箱**，不是磁盘满、也不是权限配错：档案目录在工作区外面，\n"
+        "而会话只允许写工作区。按你用的宿主，任选一个办法：\n"
+        f"  · Codex：在 ~/.codex/config.toml 里加\n"
+        f"      [sandbox_workspace_write]\n"
+        f"      writable_roots = [\"{TARGETS.parent}\"]\n"
+        "  · Claude Code：沙箱开着的话，把这个目录加进允许写的路径，或者在权限提示里允许\n"
+        "  · dsh：用包含这个目录的路径作为工作区，或者改用 danger-full-access\n"
+        "  · 任何宿主：export ROMANCE_TARGETS=<工作区内的某个目录>\n\n"
         "改参数重试没有用。"
     )
 
@@ -528,7 +543,64 @@ def cmd_extend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _legacy_notice() -> None:
+    """旧版把档案放在 skill 目录里。那里还有档案、而新位置没有它们时，提醒迁移。"""
+    if LEGACY_TARGETS.resolve() == TARGETS.resolve() or not LEGACY_TARGETS.is_dir():
+        return
+    stranded = [f.name for f in LEGACY_TARGETS.glob("*.md") if not (TARGETS / f.name).exists()]
+    if stranded:
+        print(
+            f"注意：旧位置 {LEGACY_TARGETS} 里还有 {len(stranded)} 份档案没搬到 {TARGETS}。"
+            "跑 `record.py migrate` 搬过去——在那之前它们不会出现在这里。",
+            file=sys.stderr,
+        )
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """把档案从旧位置搬到当前位置。先全部核对，再复制、逐字节校验，最后才删源文件。"""
+    source = Path(args.source).expanduser() if args.source else LEGACY_TARGETS
+    if not source.is_dir():
+        raise Refused(f"旧位置 {source} 不存在，没有要搬的")
+    if source.resolve() == TARGETS.resolve():
+        raise Refused(f"旧位置和当前位置是同一个目录：{TARGETS}")
+    pairs = []
+    for f in sorted(source.glob("*.md")) + sorted((source / "fiction").glob("*.md")):
+        dest = TARGETS / f.relative_to(source)
+        pairs.append((f, dest))
+    if not pairs:
+        raise Refused(f"{source} 里没有档案")
+    conflicts = [str(d) for f, d in pairs if d.exists() and d.read_bytes() != f.read_bytes()]
+    if conflicts:
+        raise Refused("这些文件在两边都有、而且内容不同，一个都没搬：\n  " + "\n  ".join(conflicts)
+                      + "\n先决定留哪一份（`show` 两边都看看），再重试。")
+    import shutil
+
+    moved = 0
+    for f, dest in pairs:
+        _ensure_dir(dest.parent)
+        if not dest.exists():
+            try:
+                shutil.copy2(f, dest)
+            except OSError as exc:
+                raise Unwritable(_unwritable_message(dest, exc)) from exc
+            if dest.read_bytes() != f.read_bytes():
+                raise EncodingMismatch(f"复制 {f} 之后校验不一致，停在这里，源文件都还在")
+            moved += 1
+    if not args.keep_source:
+        for f, _dest in pairs:
+            f.unlink()
+        for d in (source / "fiction", source):
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+    print(f"已搬 {moved} 份到 {TARGETS}（{len(pairs) - moved} 份两边一样，跳过）"
+          + ("；源文件保留" if args.keep_source else "；源文件已删除"))
+    return 0
+
+
 def cmd_list(_args: argparse.Namespace) -> int:
+    _legacy_notice()
     files = sorted(TARGETS.glob("*.md")) if TARGETS.exists() else []
     if not files:
         print("还没有任何目标。")
@@ -772,6 +844,7 @@ def current_boundaries(rows: list[Row]) -> list[tuple[Row, int]]:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
+    _legacy_notice()
     meta, tables = _read(args.name)
     print(f"# {args.name}")
     if meta.get("__stray__"):
@@ -1003,6 +1076,11 @@ def build() -> argparse.ArgumentParser:
     ext.set_defaults(func=cmd_extend)
 
     sub.add_parser("list", help="正在记录谁").set_defaults(func=cmd_list)
+
+    mig = sub.add_parser("migrate", help="把档案从旧位置（skill 目录里的 targets/）搬到当前位置")
+    mig.add_argument("--from", dest="source", default="", help="旧位置，默认是 skill 目录里的 targets/")
+    mig.add_argument("--keep-source", action="store_true", help="复制但不删源文件")
+    mig.set_defaults(func=cmd_migrate)
 
     show = sub.add_parser("show", help="已知什么，说人话")
     show.add_argument("name")

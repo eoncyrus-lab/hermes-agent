@@ -392,6 +392,38 @@ def main() -> int:
         r = rec(["new", "嵌套"], nested)
         case("多层不存在的目录会被建出来", r.returncode == 0, r.stderr[-300:])
 
+        print("默认档案位置在用户目录，不在 skill 目录")
+        fake_home = root / "家"
+        fake_home.mkdir()
+        home_env = {k: v for k, v in env.items() if k != "ROMANCE_TARGETS"}
+        home_env["HOME"] = str(fake_home)
+        r = rec(["new", "默认位置"], home_env)
+        case("没设 ROMANCE_TARGETS 时写进 ~/.romance-master/targets",
+             r.returncode == 0 and (fake_home / ".romance-master" / "targets" / "默认位置.md").exists(), r.stderr[-300:])
+        case("skill 目录里没有多出这份档案", not (HERE.parent / "targets" / "默认位置.md").exists())
+
+        print("migrate")
+        old_dir = root / "旧位置"
+        (old_dir / "fiction").mkdir(parents=True)
+        new_env = dict(env, ROMANCE_TARGETS=str(root / "新位置"))
+        (old_dir / "搬家.md").write_text(target_file(env, "空档").read_text(encoding="utf-8"), encoding="utf-8")
+        (old_dir / "fiction" / "搬家.md").write_text("# 搬家 · 创作\n", encoding="utf-8")
+        (root / "新位置").mkdir()
+        (root / "新位置" / "搬家.md").write_text("不一样的内容", encoding="utf-8")
+        refuses("两边内容不同就一份都不搬", ["migrate", "--from", str(old_dir)], new_env)
+        case("冲突时源文件都还在", (old_dir / "搬家.md").exists() and (old_dir / "fiction" / "搬家.md").exists())
+        (root / "新位置" / "搬家.md").unlink()
+        accepts("保留源文件的迁移", ["migrate", "--from", str(old_dir), "--keep-source"], new_env)
+        case("档案和创作内容都复制过去了",
+             (root / "新位置" / "搬家.md").read_bytes() == (old_dir / "搬家.md").read_bytes()
+             and (root / "新位置" / "fiction" / "搬家.md").exists())
+        case("--keep-source 没删源文件", (old_dir / "搬家.md").exists())
+        accepts("再迁移一次（两边一样的跳过）并删源文件", ["migrate", "--from", str(old_dir)], new_env)
+        case("源文件和空目录删掉了", not old_dir.exists())
+        r = rec(["show", "搬家"], new_env)
+        case("搬过去的档案能读", r.returncode == 0, r.stderr)
+        refuses("没有旧位置时拒绝", ["migrate", "--from", str(old_dir)], new_env)
+
         print("环境不允许写（沙箱 / 权限）")
         targets_dir = Path(env["ROMANCE_TARGETS"])
         targets_dir.chmod(0o500)
@@ -489,18 +521,23 @@ def integrity() -> None:
         used |= set(re.findall(r"record\.py (\w+)", text))
     case("文档里用到的 record.py 子命令都存在", used <= commands, "不存在：" + "、".join(sorted(used - commands)))
 
-    # 5. frontmatter 只有 harness 认的三个字段，name 与目录名一致。
-    bad_fm, mismatched = [], []
+    # 5. frontmatter 三个宿主都认：Codex 只读 name/description，Claude Code 另认
+    #    allowed-tools，dsh 忽略不认识的字段。`whenToUse` 是 dsh 独有的，别的宿主
+    #    看不见——它的内容要并进 description。description 按 Agent Skills 规范 ≤1024。
+    bad_fm, mismatched, too_long = [], [], []
     for name, text in texts.items():
         fm = text.split("---")[1]
-        extra = [l.split(":")[0] for l in fm.strip().splitlines()
-                 if l.strip() and not l.startswith(("name:", "description:", "whenToUse:"))]
+        fields = {l.split(":", 1)[0]: l.split(":", 1)[1].strip() for l in fm.strip().splitlines() if ":" in l}
+        extra = set(fields) - {"name", "description", "allowed-tools"}
         if extra:
-            bad_fm.append(f"{name}({','.join(extra)})")
-        if f"name: {name}" not in fm:
+            bad_fm.append(f"{name}({','.join(sorted(extra))})")
+        if fields.get("name") != name:
             mismatched.append(name)
-    case("frontmatter 只有 name/description/whenToUse", not bad_fm, "、".join(bad_fm))
+        if not fields.get("description") or len(fields["description"]) > 1024:
+            too_long.append(f"{name}({len(fields.get('description', ''))})")
+    case("frontmatter 只有 name/description/allowed-tools", not bad_fm, "、".join(bad_fm))
     case("name 与目录名一致", not mismatched, "、".join(mismatched))
+    case("description 非空且不超过 1024 字符", not too_long, "、".join(too_long))
 
     # 6. skill 里点名的 .md 文件真实存在。
     missing = [f"{n}->{ref}" for n, t in texts.items()

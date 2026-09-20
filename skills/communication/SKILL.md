@@ -1,12 +1,11 @@
 ---
 name: communication
-description: 一句话在字面之下真正在做什么，以及该怎么接。读潜台词的那一层。
-whenToUse: 用户贴了对方的一句原话问怎么回，或者问「她这话什么意思」。
+description: 一句话在字面之下真正在做什么，以及该怎么接。读潜台词的那一层。什么时候用：用户贴了对方的一句原话问怎么回，或者问「她这话什么意思」。
 ---
 
 # Communication
 
-> romance-master 体系的一部分。还没加载 `romance-master` 和 `method` 的话，先加载它们——这一份只装知识，档案、规矩和说话的方式在那两份里。
+> romance-master 体系的一部分。还没加载 `romance-master` 和 `method` 的话，先加载它们（装成插件时名字带前缀，比如 `sonder:romance-master`）——这一份只装知识，档案、规矩和说话的方式在那两份里。
 
 **这一份只负责"读"。** 具体怎么发、什么时候发、发多长、要不要连发——那些在 `texting` 里，别在这里重复。
 

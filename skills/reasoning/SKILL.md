@@ -1,12 +1,11 @@
 ---
 name: reasoning
-description: 怎么从单薄的证据推到结论而不发明东西。romance-master 体系里横切的一层，任何需要判断的场合都适用。
-whenToUse: 由 romance-master 在材料互相矛盾、线索不够、或者你发现自己在往空白处填东西的时候加载。
+description: 怎么从单薄的证据推到结论而不发明东西。romance-master 体系里横切的一层，任何需要判断的场合都适用。什么时候用：由 romance-master 在材料互相矛盾、线索不够、或者你发现自己在往空白处填东西的时候加载。
 ---
 
 # 从单薄的证据读人
 
-> romance-master 体系的一部分。还没加载 `romance-master` 和 `method` 的话，先加载它们——这一份不重复它们的规矩。
+> romance-master 体系的一部分。还没加载 `romance-master` 和 `method` 的话，先加载它们（装成插件时名字带前缀，比如 `sonder:romance-master`）——这一份不重复它们的规矩。
 
 这是让其余一切保持诚实的那门功夫。关系推断这个领域里，**模棱两可的行为基数极大、几乎没有标准答案**——正是听起来笃定的分析最危险、也最有说服力的形状。
 

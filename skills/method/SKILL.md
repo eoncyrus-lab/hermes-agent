@@ -1,14 +1,13 @@
 ---
 name: method
-description: 情圣的第一原则怎么落地：八条不准越过的规矩，以及置信度该怎么说出口。romance-master 体系的纪律层。
-whenToUse: 由 romance-master 在每次对话开头加载。任何要对某个**具体的人**下结论的场合——也就是几乎所有场合。它规定了别的 skill 给出的判断必须长什么样。
+description: 情圣的第一原则怎么落地：八条不准越过的规矩，以及置信度该怎么说出口。romance-master 体系的纪律层。什么时候用：由 romance-master 在每次对话开头加载。任何要对某个**具体的人**下结论的场合——也就是几乎所有场合。它规定了别的 skill 给出的判断必须长什么样。
 ---
 
 # 方法
 
-> romance-master 体系的纪律层。还没加载 `romance-master` 的话，先加载它——说话的方式和编排表在那里。
+> romance-master 体系的纪律层。还没加载 `romance-master` 的话，先加载它（装成插件时名字带前缀，比如 `sonder:romance-master`）——说话的方式和编排表在那里。
 
-> **路径指向哪。** 下面所有 `scripts/...` 和 `targets/...` 指的都是 **`romance-master`** 那份 skill 的目录，不是这份文件自己的。harness 会按**当前这份** skill 的目录去解析相对路径，而 `skills/method/` 下面没有 `scripts/`。编排者会让你先 `cd` 到 `skills/romance-master/`，照做之后这里的命令都能原样用。
+> **路径指向哪。** 下面的 `record.py` 在 **`romance-master`** 那份 skill 的 `scripts/` 里，不在这份文件旁边；档案在 `~/.romance-master/targets/`（或 `ROMANCE_TARGETS`）。命令的写法照编排者「命令怎么写」那一节。
 
 其余每一份 skill 都是领域知识——人怎么运作、一句话在做什么、说什么、床上怎么做、什么时候该走。这一份是阻止那些知识被用来**对一个从没同意被建模的真人制造笃定结论**的东西。
 

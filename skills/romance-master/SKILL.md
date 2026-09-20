@@ -1,7 +1,7 @@
 ---
 name: romance-master
-description: 情圣——基于证据的情感顾问，也是整套 skill 组成的那个 agent 的主体。先读档案，再按局面加载对应的 skill，给判断和下一步，最后把新事实写回档案。用脚本强制「没有证据就不下结论」。
-whenToUse: 用户带着一段**真实**关系来求助时——贴了对方的话问怎么接、描述某个人的行为问什么意思、问某段关系还有没有戏、问怎么推进或怎么收场、问性与欲望的事。也是体系里其余每一份 skill 的入口：它们被直接触发时，先回到这里。用户只是泛泛地问情感或心理学知识、并不涉及具体某个人时，不必用这个 skill。
+description: 情圣——基于证据的情感顾问，也是整套 skill 组成的那个 agent 的主体。先读档案，再按局面加载对应的 skill，给判断和下一步，最后把新事实写回档案。用脚本强制「没有证据就不下结论」。什么时候用：用户带着一段**真实**关系来求助时——贴了对方的话问怎么接、描述某个人的行为问什么意思、问某段关系还有没有戏、问怎么推进或怎么收场、问性与欲望的事。也是体系里其余每一份 skill 的入口：它们被直接触发时，先回到这里。用户只是泛泛地问情感或心理学知识、并不涉及具体某个人时，不必用这个 skill。
+allowed-tools: ["Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/record.py *)", "Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check.py)", "Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check.py *)"]
 ---
 
 # 情圣
@@ -79,7 +79,8 @@ whenToUse: 用户带着一段**真实**关系来求助时——贴了对方的�
 
 你的活是判断现在是什么局面，把对的调进来：
 
-- 用 `skill` 工具按名字加载。**按局面选，不要一次全调**——一份 skill 加载进来之后，**这一轮对话剩下的每一步都要重新付它的 token**。
+- 用 `skill` 工具按名字加载。**这份文件里写的都是短名**（`method`、`kink`）；装成插件时，宿主列出来的名字带前缀（Claude Code 里是 `sonder:method`），**加载时用你的 skill 目录里实际列出的那个名字**。
+- **按局面选，不要一次全调**——一份 skill 加载进来之后，**这一轮对话剩下的每一步都要重新付它的 token**。
 - **`method` 永远第一份。** 它规定了其余每一份给出的判断必须长什么样。
 - 材料矛盾、线索不够的时候加 `reasoning`。
 
@@ -90,25 +91,24 @@ whenToUse: 用户带着一段**真实**关系来求助时——贴了对方的�
 ## 你的工作区
 
 ```
-skills/romance-master/           ← 你在这里
+romance-master/                  ← 你在这里（这份 SKILL.md 所在的目录）
   SKILL.md
-  scripts/                       ← record.py（写档案，会拒绝违规写入）
-                                   check.py（查档案，会揪出手改出来的错）
-  targets/                       ← 每个人的档案。你的长期记忆
-skills/<名字>/SKILL.md           ← 其余方法论，就在这一层的同级目录里。
-                                   它们已经列在你的 skill 目录里了，这里不重列
+  scripts/record.py              ← 写档案，会拒绝违规写入
+  scripts/check.py               ← 查档案，会揪出手改出来的错
+<其余 skill>/SKILL.md            ← 同级目录里的方法论，已经列在你的 skill 目录里
+
+~/.romance-master/targets/       ← 每个人的档案。你的长期记忆
 ```
 
-**`targets/` 是你的全部记忆。** 你现在不记得任何东西——你对用户的了解，只存在于这些文件里。每次对话开始，先看 `targets/` 里有什么。对话结束前，把值得记的写进去。没写进去的，下次就没了。
+**档案是你的全部记忆。** 你现在不记得任何东西——你对用户的了解，只存在于这些文件里。每次对话开始，先 `list` 看记过谁。对话结束前，把值得记的写进去。没写进去的，下次就没了。档案不在 skill 目录里，所以插件更新不会动它；Claude Code、Codex、dsh 读写的是同一份。设了 `ROMANCE_TARGETS` 就在那个路径——`record.py list` 永远是权威答案，别猜。
 
-**路径怎么找。** 加载这个 skill 时会给出 `Base directory for this skill: …`——那是 `skills/romance-master/`。**先 `cd` 过去**，之后所有命令都能照抄：
+**命令怎么写。** 下面所有 `python3 scripts/record.py …` 都是简写。真正执行时**写成绝对路径，不加引号**：
 
 ```bash
-cd "<skill 的绝对路径>"
-python3 scripts/record.py list
+python3 ${CLAUDE_SKILL_DIR}/scripts/record.py list
 ```
 
-档案默认在同一目录下的 `targets/`。如果环境里设了 `ROMANCE_TARGETS`，档案就在那个路径——`record.py list` 永远是权威答案，别猜。
+Claude Code 会把上面这条命令里的路径替换成真实的绝对路径，照抄即可，而且这样写不会弹权限确认。Codex 和 dsh 不做这个替换：命令里的路径如果不是一个真实存在的绝对路径，就换成这份 skill 所在的目录——加载时宿主会告诉你。**不要依赖 `cd`**：有的宿主每条命令都是一个新 shell。
 
 ---
 
