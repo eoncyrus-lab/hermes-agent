@@ -42,6 +42,17 @@ def _editable_install_is_current(git_cmd, cwd, pre_pull_sha: str | None) -> bool
 # *imported*, catching cross-module breakage (a name pulled from a sibling no longer exists).
 _UPDATE_CRITICAL_MODULES = "hermes_cli.main", "run_agent", "model_tools", "toolsets"
 
+# Env keys stripped from the import-health probe child: they steer the interpreter at a
+# different tree, so an inherited PYTHONPATH pointing at an older checkout satisfies the
+# probe's imports from the stale copy and blesses a candidate missing the module entirely
+# (#115032). Same tuple as the staged-binary probe in macos_tcc_anchor.
+_PROBE_ENV_DENYLIST = (
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "__PYVENV_LAUNCHER__",
+)
+
 
 def _critical_module_import_failures(
     root, *, report_runtime_errors: bool = False) -> dict[str, tuple[str, str]]:
@@ -89,8 +100,14 @@ def _critical_module_import_failures(
             venv_python = venv_python_path(venv_dir, windows=_m()._is_windows())
             if venv_python.exists():
                 interpreter = str(venv_python)
+        # The candidate stays importable through the probe's cwd and its editable install;
+        # the scrub only removes paths the guard never meant to vouch for.
+        probe_env = dict(os.environ)
+        for denied_key in _PROBE_ENV_DENYLIST:
+            probe_env.pop(denied_key, None)
         result = bounded_probe_run(
             [interpreter, "-c", probe], timeout=120, cwd=str(root), raise_on_spawn_failure=True,
+            env=probe_env,
         )
     except (OSError, subprocess.SubprocessError):
         # Keep this guard advisory: a probe we could not even spawn (unreadable venv
@@ -369,8 +386,9 @@ def _refresh_active_memory_provider_dependencies() -> None:
             return
         provider = str(memory_cfg.get("provider") or "").strip()
 
-    # "default"/empty is the built-in file store — no pip deps.
-    if not provider or provider in {"default", "builtin", "none"}:
+    # The built-in file store has no pip deps.
+    from agent.memory_provider import is_core_memory_provider
+    if is_core_memory_provider(provider):
         return
 
     try:

@@ -11918,6 +11918,30 @@ def test_commands_catalog_includes_plugin_commands(monkeypatch):
     assert "/lcm" in dict(plugin_cat["pairs"])
 
 
+def test_plugin_slash_command_runs_under_the_session_env(monkeypatch):
+    # TUI/Desktop sibling of #108698: command.dispatch and slash.exec ran plugin handlers on the RPC
+    # thread with no HERMES_SESSION_* binding, so a handler reading get_session_env() saw "" (or the
+    # launch process's inherited values) instead of the session it was invoked from.
+    from gateway.session_context import get_session_env
+
+    seen = {}
+
+    def handler(arg):
+        seen["key"] = get_session_env("HERMES_SESSION_KEY")
+        return f"ok:{arg}"
+
+    monkeypatch.setattr("hermes_cli.plugins.get_plugin_command_handler",
+                        lambda name: handler if name == "whoami" else None)
+    monkeypatch.setattr(server, "_sessions", {"sid-p": {"session_key": "agent:tui:key-p", "cwd": ""}})
+
+    res = server._methods["command.dispatch"]("d", {"name": "whoami", "arg": "x", "session_id": "sid-p"})
+
+    assert res["result"] == {"type": "plugin", "output": "ok:x"}
+    assert seen["key"] == "agent:tui:key-p"
+    # Nothing leaks past the RPC.
+    assert get_session_env("HERMES_SESSION_KEY") in ("", None)
+
+
 def test_session_status_reads_live_gateway_agent(monkeypatch):
     agent = types.SimpleNamespace(
         model="live-model",
@@ -20418,6 +20442,28 @@ class TestResolveRuntimeWithFallback:
         assert resolution.runtime == fallback_runtime
         assert resolution.selected_model == "deepseek-v4-pro"
         assert resolution.used_fallback is True
+
+    def test_quota_auth_error_is_logged_as_rate_limited_not_auth_failed(self, monkeypatch, caplog):
+        """#117482 sibling surface: a 429/quota AuthError on the primary reads as quota in the
+        gateway's fallback log, never as an auth failure."""
+        import logging
+
+        from hermes_cli.auth import CODEX_RATE_LIMITED_CODE, AuthError
+
+        def fake_resolve(**kwargs):
+            if kwargs.get("requested") == "openai-codex":
+                raise AuthError("quota exhausted (429)", provider="openai-codex",
+                                code=CODEX_RATE_LIMITED_CODE, relogin_required=False)
+            return {"provider": "deepseek", "api_key": "fb-tok"}
+
+        monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", fake_resolve)
+        monkeypatch.setattr(server, "_load_fallback_model",
+                            lambda: [{"provider": "deepseek", "model": "deepseek-v4-pro"}])
+        with caplog.at_level(logging.WARNING, logger=server.__name__):
+            resolution = server._resolve_runtime_with_fallback({"requested": "openai-codex"})
+        assert resolution.used_fallback is True
+        assert "Primary rate-limited (429)" in caplog.text
+        assert "auth failed" not in caplog.text
 
     def test_auth_error_skips_provider_only_fallback(self, monkeypatch):
         """Auth fallback requires one complete provider/model pair."""
