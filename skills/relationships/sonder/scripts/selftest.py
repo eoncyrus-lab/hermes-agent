@@ -425,12 +425,19 @@ def main() -> int:
         refuses("没有旧位置时拒绝", ["migrate", "--from", str(old_dir)], new_env)
 
         print("环境不允许写（沙箱 / 权限）")
-        targets_dir = Path(env["ROMANCE_TARGETS"])
-        targets_dir.chmod(0o500)
-        r = rec(["new", "写不进"], env)
+        # 不用 chmod：root（CI 容器、云沙箱里很常见）无视权限位，照样写得进去。
+        # 路径上有一段是普通文件时，谁来写操作系统都会拒绝。
+        (root / "占位文件").write_text("", encoding="utf-8")
+        blocked_env = {**env, "ROMANCE_TARGETS": str(root / "占位文件" / "targets")}
+        r = rec(["new", "写不进"], blocked_env)
+        fiction = Path(env["ROMANCE_TARGETS"]) / "fiction"
+        fiction.rename(root / "fiction.bak")
+        fiction.write_text("", encoding="utf-8")
         r2 = rec(["scene", "小美", "--text", "x"], env)
-        targets_dir.chmod(0o700)
+        fiction.unlink()
+        (root / "fiction.bak").rename(fiction)
         case("不可写时报退出码 3", r.returncode == 3, f"退出码 {r.returncode}\n{r.stderr}")
+        case("已有档案写创作内容也报退出码 3", r2.returncode == 3, f"退出码 {r2.returncode}\n{r2.stderr}")
         case("不是一段 traceback", "Traceback" not in r.stderr + r2.stderr, (r.stderr + r2.stderr)[-300:])
         case("说明里点出了沙箱这个真实原因", "沙箱" in r.stderr, r.stderr)
         case("说明里给了出口", "ROMANCE_TARGETS" in r.stderr, r.stderr)
@@ -438,11 +445,6 @@ def main() -> int:
         integrity()
 
     finally:
-        for p in root.rglob("*"):
-            try:
-                p.chmod(0o700)
-            except OSError:
-                pass
         shutil.rmtree(root, ignore_errors=True)
 
     print()
